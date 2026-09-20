@@ -1,4 +1,4 @@
-"""Draws the ZillaNote icon: an ear in terracotta on warm paper.
+"""Draws the ZillaNote icon: an ear in violet on warm paper.
 
     python3 scripts/make-icon.py                # needs Pillow
     cd app && pnpm dlx @tauri-apps/cli@2.11.4 icon icons/source-1024.png -o icons
@@ -20,8 +20,8 @@ ROOT = Path(__file__).resolve().parent.parent
 
 # Warm paper and terracotta: the app sits next to Claude and should look at home there.
 PAPER_LIGHT, PAPER_DEEP = (252, 250, 245), (233, 225, 211)
-CLAY_LIGHT, CLAY_DEEP = (226, 140, 108), (189, 92, 60)
-CLAY_SHADOW = (120, 62, 36)
+VIOLET_LIGHT, VIOLET_DEEP = (168, 120, 242), (122, 53, 209)
+VIOLET_SHADOW = (58, 24, 110)
 
 
 def background():
@@ -44,15 +44,15 @@ def background():
     icon.paste(gradient.resize((BIG, BIG), Image.BICUBIC), (0, 0), shape)
     edge = Image.new("L", (BIG, BIG), 0)
     ImageDraw.Draw(edge).rounded_rectangle(box, radius, outline=255, width=3 * SCALE)
-    icon.paste(Image.new("RGBA", (BIG, BIG), (*CLAY_SHADOW, 255)), (0, 0), edge.point(lambda v: v * 0.16))
+    icon.paste(Image.new("RGBA", (BIG, BIG), (*VIOLET_SHADOW, 255)), (0, 0), edge.point(lambda v: v * 0.16))
     return icon, shape
 
 
-def lay(icon, mask, top=CLAY_LIGHT, bottom=CLAY_DEEP, shadow=True):
+def lay(icon, mask, top=VIOLET_LIGHT, bottom=VIOLET_DEEP, shadow=True):
     """Fills `mask` with a terracotta gradient over a soft warm shadow."""
     if shadow:
         dark = ImageChops.offset(mask, 0, 8 * SCALE).filter(ImageFilter.GaussianBlur(12 * SCALE))
-        icon.paste(Image.new("RGBA", (BIG, BIG), (*CLAY_SHADOW, 255)), (0, 0), dark.point(lambda v: v * 0.28))
+        icon.paste(Image.new("RGBA", (BIG, BIG), (*VIOLET_SHADOW, 255)), (0, 0), dark.point(lambda v: v * 0.28))
     column = Image.new("RGB", (1, BIG))
     lo, hi = 240 * SCALE, 800 * SCALE
     for y in range(BIG):

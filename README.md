@@ -39,7 +39,7 @@ background, on this machine except for the language model you choose.
   simply have no names.
 - **Window:** it starts as a small bar (38 by 142 points) that floats at the right edge of
   the screen: logo, level meter, record/stop, a progress ring while a meeting is processed.
-  The clay-coloured tab at the bottom opens the full window; closing that window (or its down-arrow) goes back to the bar. Drag the
+  The violet tab at the bottom opens the full window; closing that window (or its down-arrow) goes back to the bar. Drag the
   bar by its logo.
 - **Email:** fill in one address in Settings, plus the mail account that sends (its app
   password, or authorization code for QQ and 163), and every set of minutes is mailed there
@@ -132,7 +132,7 @@ cargo test -p engine live_recording -- --ignored --nocapture      # plays 8 s of
 | `crates/engine` | recorder (microphone and system audio), mixdown, pause-based chunking, cutting at speaker turns, named voices, model download, pipeline, minutes, templates, file store |
 | `app` | the Tauri shell: commands, events, one window |
 | `ui` | two pages (`mini.html` the bar, `index.html` the full window): plain HTML, CSS and JavaScript, no build step |
-| `scripts/make-icon.py` | draws the icon (an ear in terracotta on warm paper) and the menu-bar mark; `tauri icon` turns the icon into every format |
+| `scripts/make-icon.py` | draws the icon (an ear in violet on warm paper) and the menu-bar mark; `tauri icon` turns the icon into every format |
 
 ## Not built yet
 

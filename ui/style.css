@@ -1,13 +1,16 @@
 :root {
   color-scheme: light dark;
-  /* Warm paper and terracotta, as in the icon. Red stays for recording and for trouble. */
+  /* Warm paper and violet, as in the icon. Red stays for a recording under way and for trouble. */
   --bg: #faf9f5;
   --surface: #ffffff;
   --text: #1f1e1d;
   --muted: #73726c;
   --line: #e8e6dc;
   --accent: #d2452f;
-  --brand: #c96442;
+  --brand: #8b45e0;
+  --brand-lighter: #c3a0f8;
+  --brand-deep: #6a2bbd;
+  --brand-soft: rgba(139, 69, 224, 0.14);
   --accent-soft: rgba(210, 69, 47, 0.13);
   --ok: #2f7d4f;
   --warn-bg: #f7ecd9;
@@ -22,7 +25,7 @@
     --text: #f0eee6;
     --muted: #a3a097;
     --line: #3d3c38;
-    --brand: #d97757;
+    --brand: #a878f2;
     --warn-bg: #3a2f17;
     --warn-text: #f1cf8a;
   }
@@ -37,6 +40,7 @@ body { background: var(--bg); color: var(--text); overflow: hidden; }
 .view { height: 100%; display: flex; flex-direction: column; padding: 0 20px 16px; }
 .bar { display: flex; align-items: center; gap: 8px; padding: 14px 0 6px; }
 .bar h1 { font-size: 17px; margin: 0; flex: 1; letter-spacing: 0.01em; }
+.bar h1 small { margin-left: 5px; font-size: 11px; font-weight: 400; letter-spacing: 0; color: var(--muted); }
 .brand { width: 26px; height: 26px; border-radius: 7px; }
 button.icon svg { display: block; }
 h2 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0 0 8px; }
@@ -53,10 +57,11 @@ button.primary { background: var(--brand); color: #fff; border-color: var(--bran
 /* --- recorder --- */
 .recorder { display: flex; flex-direction: column; align-items: center; padding: 26px 0 18px; }
 .record { position: relative; width: 132px; height: 132px; border-radius: 50%; border: none; background: none; padding: 0; }
-.record .ring { position: absolute; inset: 0; border-radius: 50%; background: var(--accent-soft); transform: scale(var(--level, 0.82)); transition: transform 0.12s ease-out; }
-.record .dot { position: absolute; inset: 22px; border-radius: 50%; background: var(--accent); box-shadow: 0 6px 18px rgba(217, 58, 43, 0.35); transition: border-radius 0.2s, inset 0.2s; }
+.record .ring { position: absolute; inset: 0; border-radius: 50%; background: var(--brand-soft); transform: scale(var(--level, 0.82)); transition: transform 0.12s ease-out; }
+.record .dot { position: absolute; inset: 22px; border-radius: 50%; background: radial-gradient(circle at 36% 30%, var(--brand-lighter), var(--brand) 46%, var(--brand-deep)); box-shadow: 0 6px 18px rgba(106, 43, 189, 0.38); transition: border-radius 0.2s, inset 0.2s; }
 .record:hover .dot { filter: brightness(1.06); }
-.record.recording .dot { inset: 44px; border-radius: 10px; }
+.record.recording .ring { background: var(--accent-soft); }
+.record.recording .dot { inset: 44px; border-radius: 10px; background: var(--accent); box-shadow: 0 6px 18px rgba(217, 58, 43, 0.35); }
 .record:disabled .dot { background: var(--muted); box-shadow: none; }
 .timer { font-size: 30px; font-variant-numeric: tabular-nums; font-weight: 300; margin-top: 12px; color: var(--muted); }
 .recording ~ .timer { color: var(--text); }

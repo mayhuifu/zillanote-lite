@@ -4,6 +4,9 @@ import { renderTranscript } from "./transcript.js";
 
 const $ = (id) => document.getElementById(id);
 
+// First of all, and on its own: whatever else goes wrong, the window says which build it is.
+invoke("app_version").then((version) => ($("version").textContent = `v${version}`)).catch(() => {});
+
 const STATUS_LABEL = {
   recording: "Recording",
   transcribing: "Transcribing",

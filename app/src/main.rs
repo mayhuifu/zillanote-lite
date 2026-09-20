@@ -211,6 +211,12 @@ fn stop_and(app: &AppHandle, process: bool) -> Result<Meeting, String> {
     Ok(meeting)
 }
 
+/// Shown after the name in the window, so a report can say which build it is about.
+#[tauri::command]
+fn app_version() -> &'static str {
+    env!("CARGO_PKG_VERSION")
+}
+
 #[tauri::command]
 fn recording_state(state: State<'_, App>) -> Option<RecordingState> {
     let active = state.active.lock().ok()?;
@@ -783,6 +789,7 @@ fn main() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            app_version,
             start_recording,
             stop_recording,
             recording_state,

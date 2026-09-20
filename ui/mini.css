@@ -5,17 +5,17 @@
   --text: #1f1e1d;
   --muted: #87867f;
   --line: #e8e6dc;
-  --brand: #c96442;
+  --brand: #8b45e0;
   /* The icon's own gradient, from scripts/make-icon.py. */
-  --clay-lighter: #eda284;
-  --clay-light: #e28c6c;
-  --clay-deep: #bd5c3c;
+  --violet-lighter: #c3a0f8;
+  --violet-light: #a878f2;
+  --violet-deep: #7a35d1;
   --red: #d2452f;
   --ok: #2f7d4f;
   font: 8.5px/1.2 -apple-system, "Segoe UI", sans-serif;
 }
 @media (prefers-color-scheme: dark) {
-  :root { --surface: #262624; --text: #f0eee6; --muted: #a3a097; --line: #3d3c38; --brand: #d97757; }
+  :root { --surface: #262624; --text: #f0eee6; --muted: #a3a097; --line: #3d3c38; --brand: #a878f2; }
 }
 
 * { box-sizing: border-box; }
@@ -68,7 +68,7 @@ button { border: none; background: none; padding: 0; color: inherit; cursor: poi
 .status.failed .glyph { color: var(--red); font-size: 10px; }
 @keyframes spin { to { transform: rotate(1turn); } }
 
-/* The tab that opens the window, in the clay of the icon: light at the top, deep below. */
-.expand { margin-top: auto; width: 100%; height: 19px; display: grid; place-items: center; background: linear-gradient(180deg, var(--clay-light), var(--clay-deep)); color: #fff; }
+/* The tab that opens the window, in the violet of the icon: light at the top, deep below. */
+.expand { margin-top: auto; width: 100%; height: 19px; display: grid; place-items: center; background: linear-gradient(180deg, var(--violet-light), var(--violet-deep)); color: #fff; }
 .expand svg { width: 12px; height: 12px; }
-.expand:hover { background: linear-gradient(180deg, var(--clay-lighter), var(--clay-light)); }
+.expand:hover { background: linear-gradient(180deg, var(--violet-lighter), var(--violet-light)); }
