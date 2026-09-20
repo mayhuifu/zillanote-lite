@@ -39,18 +39,42 @@ struct ChoiceMessage {
     content: String,
 }
 
+/// What the model is told about the meeting besides what was said in it.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct About<'a> {
+    pub title: &'a str,
+    /// Like "2026-09-20 (Sunday)", so that "tomorrow" and "Tuesday" can become dates.
+    pub date: &'a str,
+    /// The user's list of names and terms, in their correct spelling.
+    pub known_terms: &'a [String],
+}
+
+impl About<'_> {
+    fn lines(&self) -> String {
+        let mut lines = vec![format!("Meeting title: {}", self.title)];
+        if !self.date.is_empty() {
+            lines.push(format!("Meeting date: {}", self.date));
+        }
+        if !self.known_terms.is_empty() {
+            lines.push(format!("Known names and terms, correctly spelled: {}", self.known_terms.join(", ")));
+        }
+        lines.join("\n")
+    }
+}
+
 /// `on_step(done, total)` reports each model call as it finishes.
 pub async fn write_minutes(
     config: &LlmConfig,
     system_prompt: &str,
     template: &Template,
-    title: &str,
+    about: About<'_>,
     transcript_text: &str,
     on_step: impl Fn(usize, usize),
 ) -> Result<String, String> {
     if config.base_url.trim().is_empty() || config.model.trim().is_empty() {
         return Err("Choose a language model in Settings first.".to_string());
     }
+    let system_prompt = &crate::templates::effective_system_prompt(system_prompt);
 
     let parts = split_at_lines(transcript_text, config.max_chars_per_call.max(2_000));
     let total = if parts.len() > 1 { parts.len() + 1 } else { 1 };
@@ -61,14 +85,7 @@ pub async fn write_minutes(
         // Too long for one call: take notes on each part, then write from the notes.
         let mut notes = Vec::with_capacity(parts.len());
         for (index, part) in parts.iter().enumerate() {
-            let request = format!(
-                "This is part {} of {} of a long transcript. Write detailed notes on this part only: \
-                 the facts, figures, arguments, decisions, commitments and open questions, in order, \
-                 keeping the [mm:ss] times. Do not write final minutes yet.\n\nTranscript part:\n\n{part}",
-                index + 1,
-                parts.len()
-            );
-            notes.push(chat(config, system_prompt, &request).await?);
+            notes.push(chat(config, system_prompt, &notes_request(template, about, index, parts.len(), part)).await?);
             on_step(index + 1, total);
         }
         format!(
@@ -77,10 +94,28 @@ pub async fn write_minutes(
         )
     };
 
-    let request = format!("{}\n\nMeeting title: {title}\n\n{source}", template.prompt);
+    let request = format!("{}\n\n{}\n\n{source}", template.prompt, about.lines());
     let minutes = chat(config, system_prompt, &request).await?;
     on_step(total, total);
     Ok(minutes)
+}
+
+/// Notes are material for the minutes, not minutes: by topic, with everything a decision
+/// hangs on, and with times only when the template will want them.
+fn notes_request(template: &Template, about: About<'_>, index: usize, count: usize, part: &str) -> String {
+    let times = if template.wants_times {
+        " Note the [mm:ss] time at which each topic starts."
+    } else {
+        " Leave the [mm:ss] times out."
+    };
+    format!(
+        "This is part {} of {count} of a long transcript. Do not write minutes yet. Write notes on this part only, \
+         grouped by topic: the conclusions and positions with their reasons, the figures, the decisions, the \
+         commitments with who made them, and what was left open. Correct mis-heard terms as your instructions \
+         say.{times}\n\n{}\n\nTranscript part:\n\n{part}",
+        index + 1,
+        about.lines()
+    )
 }
 
 /// Pauses before the second and third try of a call that failed for a passing reason.
@@ -260,6 +295,13 @@ mod tests {
         assert!(!is_loopback("https://api.openai.com/v1"));
     }
 
+    fn about() -> About<'static> {
+        About {
+            title: "Title",
+            ..About::default()
+        }
+    }
+
     fn config_for(server: &wiremock::MockServer) -> LlmConfig {
         LlmConfig {
             base_url: server.uri(),
@@ -287,10 +329,44 @@ mod tests {
         wiremock::Mock::given(method("POST")).respond_with(answer("## Summary\nDone.")).mount(&server).await;
 
         let template = crate::templates::template("discussion");
-        let minutes = write_minutes(&config_for(&server), "system", template, "Title", "[00:00] hello", |_, _| {}).await;
+        let minutes = write_minutes(&config_for(&server), "system", template, about(), "[00:00] hello", |_, _| {}).await;
 
         assert_eq!(minutes.unwrap(), "## Summary\nDone.");
         assert_eq!(server.received_requests().await.unwrap().len(), 3);
+    }
+
+    #[tokio::test]
+    async fn the_model_is_given_the_date_the_known_terms_and_the_shape_of_the_minutes() {
+        use wiremock::matchers::method;
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(method("POST")).respond_with(answer("## 1. Topic")).mount(&server).await;
+        let terms = ["U300".to_string(), "RedCap".to_string()];
+        let about = About {
+            title: "SP review",
+            date: "2026-09-20 (Sunday)",
+            known_terms: &terms,
+        };
+
+        // The user's own rules name no shape, so ours goes along.
+        let template = crate::templates::template("business");
+        write_minutes(&config_for(&server), "Be brief.", template, about, "[00:00] hello", |_, _| {}).await.unwrap();
+
+        let sent: serde_json::Value = server.received_requests().await.unwrap()[0].body_json().unwrap();
+        let (system, user) = (sent["messages"][0]["content"].as_str().unwrap(), sent["messages"][1]["content"].as_str().unwrap());
+        assert!(system.starts_with("Be brief.") && system.contains("## AI suggestions"), "{system}");
+        assert!(user.contains("Meeting date: 2026-09-20 (Sunday)"), "{user}");
+        assert!(user.contains("Known names and terms, correctly spelled: U300, RedCap"), "{user}");
+    }
+
+    #[test]
+    fn notes_on_a_long_transcript_keep_times_only_for_the_template_that_shows_them() {
+        let about = about();
+        let flow = notes_request(crate::templates::template("discussion"), about, 0, 2, "[00:00] hi");
+        let business = notes_request(crate::templates::template("business"), about, 0, 2, "[00:00] hi");
+
+        assert!(flow.contains("time at which each topic starts"));
+        assert!(business.contains("Leave the [mm:ss] times out"));
+        assert!(business.contains("part 1 of 2") && business.contains("Do not write minutes yet"));
     }
 
     #[tokio::test]
@@ -303,7 +379,7 @@ mod tests {
             .await;
 
         let template = crate::templates::template("discussion");
-        let error = write_minutes(&config_for(&server), "system", template, "Title", "[00:00] hello", |_, _| {})
+        let error = write_minutes(&config_for(&server), "system", template, about(), "[00:00] hello", |_, _| {})
             .await
             .unwrap_err();
 
@@ -324,7 +400,7 @@ mod tests {
             &config,
             "system",
             crate::templates::template("discussion"),
-            "Title",
+            about(),
             "[00:00] hello",
             |_, _| {},
         )

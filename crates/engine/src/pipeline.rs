@@ -13,7 +13,7 @@ use speakers::{DiarizationConfig, DiarizeRequest, Diarizer, SpeakerModels};
 use crate::audio::{TARGET_RATE, read_wav_16k_channels};
 use crate::chunker::{Chunk, ChunkerConfig, speech_chunks};
 use crate::email;
-use crate::minutes::{LlmConfig, write_minutes};
+use crate::minutes::{About, LlmConfig, write_minutes};
 use crate::mixdown::recognition_signal;
 use crate::store::{Meeting, Settings, Status, Store};
 use crate::templates::template;
@@ -344,11 +344,20 @@ impl Pipeline {
         self.update(meeting, Status::Summarizing, 0.0, on_update);
 
         let settings = self.store.settings();
+        // With the weekday, so "on Tuesday" in the meeting can become a date in the minutes.
+        let date = chrono::DateTime::parse_from_rfc3339(&meeting.created_at)
+            .map(|at| at.format("%Y-%m-%d (%A)").to_string())
+            .unwrap_or_default();
+        let about = About {
+            title: &meeting.title,
+            date: &date,
+            known_terms: &settings.vocabulary,
+        };
         let result = write_minutes(
             &llm_config(&settings),
             &settings.system_prompt,
             template(&meeting.template),
-            &meeting.title,
+            about,
             &transcript.to_text(),
             |_, _| {},
         )

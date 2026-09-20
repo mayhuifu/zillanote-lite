@@ -325,7 +325,7 @@ fn save_settings(state: State<'_, App>, settings: Settings) -> Result<(), String
 
 #[tauri::command]
 fn default_system_prompt() -> &'static str {
-    DEFAULT_SYSTEM_PROMPT
+    DEFAULT_SYSTEM_PROMPT.as_str()
 }
 
 #[tauri::command]

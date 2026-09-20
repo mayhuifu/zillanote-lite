@@ -18,7 +18,7 @@ use std::sync::Arc;
 
 use crate::email::EmailSettings;
 use crate::secrets::{self, SecretStore};
-use crate::templates::{DEFAULT_SYSTEM_PROMPT, DEFAULT_TEMPLATE};
+use crate::templates::{DEFAULT_SYSTEM_PROMPT, DEFAULT_TEMPLATE, PREVIOUS_SYSTEM_PROMPTS};
 use crate::transcript::Transcript;
 use crate::voices::{MeetingSpeaker, Voice};
 
@@ -161,6 +161,11 @@ impl Store {
 
     pub fn settings(&self) -> Settings {
         let mut settings = self.settings_on_disk();
+        // A prompt that is still word for word what an earlier version started with was
+        // never edited: it moves on with the app. One the user has touched is theirs.
+        if PREVIOUS_SYSTEM_PROMPTS.iter().any(|previous| previous.trim() == settings.system_prompt.trim()) {
+            settings.system_prompt = DEFAULT_SYSTEM_PROMPT.to_string();
+        }
         // A secret still in the file (an older version wrote it, or the keychain refused it)
         // counts; otherwise it is wherever secrets are kept.
         if let Some(secrets) = &self.secrets {
@@ -414,7 +419,7 @@ mod tests {
         let settings = store.settings();
 
         assert_eq!(settings.llm_model, "m");
-        assert_eq!(settings.system_prompt, DEFAULT_SYSTEM_PROMPT);
+        assert_eq!(settings.system_prompt, *DEFAULT_SYSTEM_PROMPT);
         assert!(settings.record_system_audio);
         assert!(settings.auto_minutes);
     }
@@ -490,6 +495,19 @@ mod tests {
 
         assert!(std::fs::read_to_string(dir.path().join("settings.json")).unwrap().contains("sk-secret"));
         assert_eq!(store.settings(), secret_settings());
+    }
+
+    #[test]
+    fn an_untouched_prompt_moves_on_with_the_app_and_an_edited_one_stays() {
+        let (_dir, store) = store();
+        let mut settings = Settings::default();
+        settings.system_prompt = PREVIOUS_SYSTEM_PROMPTS[0].to_string();
+        store.save_settings(&settings).unwrap();
+        assert_eq!(store.settings().system_prompt, *DEFAULT_SYSTEM_PROMPT);
+
+        settings.system_prompt = PREVIOUS_SYSTEM_PROMPTS[0].replace("Output Markdown only", "Output plain text only");
+        store.save_settings(&settings).unwrap();
+        assert!(store.settings().system_prompt.contains("Output plain text only"));
     }
 
     #[test]
