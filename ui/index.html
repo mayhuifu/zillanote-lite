@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ZillaNote</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <main id="home" class="view">
+      <header class="bar">
+        <h1>ZillaNote</h1>
+        <button id="open-settings" class="icon" title="Settings" aria-label="Settings">⚙</button>
+      </header>
+
+      <section class="recorder">
+        <button id="record" class="record" aria-label="Start recording">
+          <span class="ring"></span>
+          <span class="dot"></span>
+        </button>
+        <div id="timer" class="timer">00:00</div>
+        <p id="hint" class="hint">Click to start recording</p>
+      </section>
+
+      <div id="notice" class="notice" hidden></div>
+
+      <section class="meetings">
+        <h2>Meetings</h2>
+        <ul id="meeting-list"></ul>
+        <p id="empty" class="empty" hidden>Your meetings will appear here.</p>
+      </section>
+    </main>
+
+    <main id="detail" class="view" hidden>
+      <header class="bar">
+        <button id="back" class="icon" title="Back" aria-label="Back">←</button>
+        <input id="title" class="title" spellcheck="false" aria-label="Meeting title" />
+        <button id="reveal" class="icon" title="Show files" aria-label="Show files">📁</button>
+      </header>
+      <p id="detail-meta" class="meta"></p>
+      <div id="detail-error" class="notice" hidden></div>
+      <div id="detail-progress" class="progress" hidden><span></span></div>
+
+      <nav class="tabs">
+        <button data-tab="minutes" class="tab active">Minutes</button>
+        <button data-tab="transcript" class="tab">Transcript</button>
+        <span class="spacer"></span>
+        <button id="copy" class="text">Copy</button>
+      </nav>
+      <article id="minutes" class="document"></article>
+      <article id="transcript" class="document transcript" hidden></article>
+
+      <footer class="actions">
+        <select id="template" aria-label="Template"></select>
+        <button id="rewrite">Write minutes</button>
+        <span class="spacer"></span>
+        <button id="reprocess" class="text" title="Transcribe the recording again">Transcribe again</button>
+        <button id="delete" class="text danger">Delete</button>
+      </footer>
+    </main>
+
+    <dialog id="settings">
+      <form method="dialog" id="settings-form">
+        <h2>Settings</h2>
+
+        <h3>Language model</h3>
+        <p class="help">Any OpenAI-compatible endpoint: LM Studio or Ollama on this Mac, or a hosted API with a key.</p>
+        <label>Endpoint URL <input id="llm-url" type="url" placeholder="http://localhost:1234/v1" /></label>
+        <label>Model <input id="llm-model" type="text" placeholder="qwen/qwen3.8-27b" /></label>
+        <label>API key <input id="llm-key" type="password" placeholder="Not needed for a local model" autocomplete="off" /></label>
+
+        <h3>Minutes</h3>
+        <label>Default template <select id="default-template"></select></label>
+        <label>
+          System prompt
+          <textarea id="system-prompt" rows="9" spellcheck="false"></textarea>
+        </label>
+        <button type="button" id="reset-prompt" class="text">Reset to the default prompt</button>
+
+        <h3>Recognition</h3>
+        <label>
+          Names and terms to prefer
+          <textarea id="vocabulary" rows="3" placeholder="One per line: people, products, acronyms" spellcheck="false"></textarea>
+        </label>
+        <div id="readiness" class="readiness"></div>
+
+        <menu>
+          <button type="button" id="cancel-settings" class="text">Cancel</button>
+          <button type="submit" id="save-settings" class="primary">Save</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <div id="toast" class="toast" hidden></div>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>
