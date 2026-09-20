@@ -128,25 +128,43 @@ pub async fn send(settings: &EmailSettings, message: Message) -> Result<(), Stri
 
     let transport = builder
         .port(server.port)
-        .credentials(Credentials::new(
-            settings.from.trim().to_string(),
-            settings.password.trim().to_string(),
-        ))
+        .credentials(Credentials::new(settings.from.trim().to_string(), password(settings)))
         .timeout(Some(Duration::from_secs(30)))
         .build();
 
     transport.send(message).await.map(|_| ()).map_err(|error| {
         let detail = error.to_string();
         if detail.contains("535") || detail.to_lowercase().contains("auth") {
-            format!(
-                "{} did not accept the address or password. Gmail, iCloud and Yahoo need an app \
-                 password, QQ and 163 an authorization code, not the login password. ({detail})",
-                server.host
-            )
+            format!("{} did not accept the address or password. {} ({detail})", server.host, advice(&server.host))
         } else {
             format!("Could not send through {}:{}: {detail}", server.host, server.port)
         }
     })
+}
+
+/// Google shows an app password as four groups of four letters, and that is how it gets
+/// pasted. The sixteen letters are the password.
+fn password(settings: &EmailSettings) -> String {
+    let typed = settings.password.trim();
+    let groups = typed.split_whitespace().collect::<Vec<_>>();
+    let grouped = groups.len() == 4
+        && groups.iter().all(|group| group.len() == 4 && group.chars().all(|c| c.is_ascii_alphabetic()));
+    if grouped { groups.concat() } else { typed.to_string() }
+}
+
+/// What to do about a refused password, which differs by provider.
+fn advice(host: &str) -> &'static str {
+    match host {
+        "smtp.gmail.com" => {
+            "Gmail never takes the Google password here, only an app password: turn on 2-Step \
+             Verification, then make one at https://myaccount.google.com/apppasswords."
+        }
+        "smtp.qq.com" | "smtp.163.com" | "smtp.126.com" => {
+            "It takes an authorization code, not the login password: switch on SMTP in the mailbox's \
+             settings on the web, which hands out the code."
+        }
+        _ => "Most providers take an app password here, not the login password.",
+    }
 }
 
 pub async fn send_test(settings: &EmailSettings) -> Result<(), String> {
@@ -183,6 +201,15 @@ mod tests {
         assert_eq!(server("me@corp.example", "mail.corp.example").unwrap().port, 465);
         assert!(server("me@corp.example", "").unwrap_err().contains("corp.example"));
         assert!(server("me@corp.example", "host:abc").is_err());
+    }
+
+    #[test]
+    fn a_google_app_password_pasted_in_its_four_groups_loses_the_spaces() {
+        let typed = |password: &str| super::password(&EmailSettings { password: password.into(), ..settings("me@gmail.com", "") });
+
+        assert_eq!(typed(" abcd efgh  ijkl mnop "), "abcdefghijklmnop");
+        assert_eq!(typed("my own pass word"), "my own pass word", "any other password is left as typed");
+        assert_eq!(typed("abcd efgh ijkl"), "abcd efgh ijkl");
     }
 
     #[test]

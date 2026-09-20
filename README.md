@@ -6,9 +6,10 @@ background, on this machine except for the language model you choose.
 - **Speech to text:** Qwen3-ASR through a bundled `llama-server`, started only while a
   recording is being transcribed (memory for that time only, none when idle). Settings
   offers four models, each with its download size, the time that takes on this connection
-  (measured, not guessed) and the memory it needs: 1.7B at 8 bits (the default, and the one
-  for meetings that mix English and Mandarin), 1.7B at 4 bits, 0.6B at 8 bits and 0.6B at 4
-  bits. Both precisions of a size share one audio encoder, so switching costs one file.
+  (measured, not guessed) and the memory it needs: 1.7B at 8 bits (the most accurate, and the
+  one for meetings that mix English and Mandarin), 1.7B at 4 bits, 0.6B at 8 bits and 0.6B at
+  4 bits (the default: a 0.9 GB download and 1.6 GB of memory while transcribing). Both
+  precisions of a size share one audio encoder, so switching costs one file.
 - **Minutes:** any OpenAI-compatible endpoint (LM Studio, Ollama, or a hosted API with a key).
   The system prompt, editable in Settings (its default is in
   [`docs/default-system-prompt.md`](docs/default-system-prompt.md)), holds the rules and,
@@ -43,7 +44,10 @@ background, on this machine except for the language model you choose.
 - **Email:** fill in one address in Settings, plus the mail account that sends (its app
   password, or authorization code for QQ and 163), and every set of minutes is mailed there
   as soon as it is written. The server is worked out from the sender's address for Gmail,
-  Outlook.com, iCloud, Yahoo, QQ, 163 and 126; any other provider shows a server field. A
+  Outlook.com, iCloud, Yahoo, QQ, 163 and 126; any other provider shows a server field.
+  "Send a test email" leaves the server's answer on the page and in the log; a refused
+  password comes with what that provider wants instead (Gmail: an app password, which needs
+  2-Step Verification). A
   mail that fails never fails the meeting: the reason is shown with a "Send again" button.
 - **Menu bar:** an ear in the menu bar starts and stops a recording, opens the window,
   imports a recording and quits.

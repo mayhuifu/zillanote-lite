@@ -17,7 +17,6 @@ use std::path::{Path, PathBuf};
     PartialEq,
 )]
 pub enum Qwen3AsrModel {
-    #[default]
     #[serde(rename = "qwen3-asr-1.7b")]
     #[strum(serialize = "qwen3-asr-1.7b")]
     Large,
@@ -27,6 +26,8 @@ pub enum Qwen3AsrModel {
     #[serde(rename = "qwen3-asr-0.6b")]
     #[strum(serialize = "qwen3-asr-0.6b")]
     Small,
+    /// What a new installation starts with: the smallest download, and the least memory.
+    #[default]
     #[serde(rename = "qwen3-asr-0.6b-q4")]
     #[strum(serialize = "qwen3-asr-0.6b-q4")]
     SmallQ4,
@@ -119,7 +120,7 @@ impl Qwen3AsrModel {
             Self::Large => "The most accurate, and the one to take for meetings that mix English and Mandarin.",
             Self::LargeQ4 => "The big model in two thirds of the space. In our test its transcripts matched the 8-bit model's to 98%, mixed English and Mandarin included.",
             Self::Small => "Less than half the download and half the memory, and twice as fast. As good on clear English (98%), weaker on a meeting that mixes English and Mandarin (93%).",
-            Self::SmallQ4 => "The smallest: for a Mac that is short of memory, or a slow line. 98% on clear English, 92% on a mixed meeting.",
+            Self::SmallQ4 => "The smallest and the fastest, which is why ZillaNote starts with it. Against the big model: 98% of the words on clear English, 92% on a meeting that mixes English and Mandarin.",
         }
     }
 
@@ -221,7 +222,7 @@ mod tests {
             assert_eq!(serde_json::to_string(model).unwrap(), format!("\"{}\"", model.as_str()));
             assert_eq!(model.to_string().parse::<Qwen3AsrModel>().unwrap(), *model);
         }
-        assert_eq!(Qwen3AsrModel::default(), Qwen3AsrModel::Large);
+        assert_eq!(Qwen3AsrModel::default(), Qwen3AsrModel::SmallQ4, "a new installation downloads the least");
         assert_eq!(Qwen3AsrModel::Large.as_str(), "qwen3-asr-1.7b", "transcripts and settings carry this id");
     }
 

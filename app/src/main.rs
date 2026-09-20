@@ -359,7 +359,12 @@ async fn send_test_email(settings: Settings) -> Result<(), String> {
     if !settings.email.is_configured() {
         return Err("Fill in the address to send to, the sending account and its password.".to_string());
     }
-    engine::email::send_test(&settings.email).await
+    let sent = engine::email::send_test(&settings.email).await;
+    match &sent {
+        Ok(()) => tracing::info!(to = %settings.email.to.trim(), "email_test_sent"),
+        Err(error) => tracing::warn!(%error, "email_test_failed"),
+    }
+    sent
 }
 
 /// Leaves the app. When that would cut something short, it asks first, and says what

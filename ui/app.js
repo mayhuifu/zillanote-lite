@@ -350,7 +350,7 @@ function renderModels(ready) {
     option.innerHTML = `
       <input type="radio" name="asr-model" value="${model.id}" ${model.chosen ? "checked" : ""} />
       <span>
-        <span class="name"><b>${escapeHtml(model.name)}</b>${model.id === ready.models[0].id ? ' <em class="tag">recommended</em>' : ""}</span>
+        <span class="name"><b>${escapeHtml(model.name)}</b>${model.is_default ? ' <em class="tag">default</em>' : ""}</span>
         <small>${escapeHtml(model.description)}</small>
         <small class="facts">${escapeHtml(modelFacts(model))}</small>
       </span>`;
@@ -469,10 +469,18 @@ $("test-email").addEventListener("click", async () => {
   const button = $("test-email");
   button.disabled = true;
   button.textContent = "Sending…";
+  // The answer stays on the page: a mail server's reason is too long for a passing note.
+  const result = $("test-email-result");
+  result.hidden = true;
   try {
-    await call("send_test_email", { settings: readSettings() });
-    toast(`Test sent to ${$("email-to").value.trim()}`);
+    await invoke("send_test_email", { settings: readSettings() });
+    result.textContent = `Test sent to ${$("email-to").value.trim()}. If it does not arrive, look in that mailbox's junk folder.`;
+    result.className = "help result ok";
+  } catch (error) {
+    result.textContent = String(error);
+    result.className = "help result problem";
   } finally {
+    result.hidden = false;
     button.disabled = false;
     button.textContent = "Send a test email";
   }

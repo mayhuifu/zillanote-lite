@@ -463,6 +463,8 @@ pub struct ModelChoice {
     /// Memory it needs while transcribing.
     pub memory_bytes: u64,
     pub chosen: bool,
+    /// What a new installation starts with.
+    pub is_default: bool,
 }
 
 /// Whether transcription can start, and if not, what is missing.
@@ -509,6 +511,7 @@ impl Pipeline {
                     missing_bytes: choice.missing_downloads(&models_dir).iter().map(|file| file.size_bytes).sum(),
                     memory_bytes: choice.memory_bytes(),
                     chosen: *choice == model,
+                    is_default: *choice == Qwen3AsrModel::default(),
                 })
                 .collect(),
             total_memory_bytes: qwen3_asr::total_memory_bytes(),
