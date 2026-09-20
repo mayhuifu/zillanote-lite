@@ -84,6 +84,8 @@ pub struct Settings {
     pub record_system_audio: bool,
     /// Write the minutes as soon as the transcript is ready, without being asked.
     pub auto_minutes: bool,
+    /// Which of the speech models transcribes.
+    pub asr_model: qwen3_asr::Qwen3AsrModel,
 }
 
 impl Default for Settings {
@@ -100,6 +102,7 @@ impl Default for Settings {
             email: EmailSettings::default(),
             record_system_audio: true,
             auto_minutes: true,
+            asr_model: qwen3_asr::Qwen3AsrModel::default(),
         }
     }
 }

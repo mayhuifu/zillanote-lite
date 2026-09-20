@@ -458,7 +458,8 @@ fn download_models(app: AppHandle, state: State<'_, App>) -> Result<(), String> 
     let _ = app.emit(DOWNLOAD_PROGRESS, beginning);
 
     tauri::async_runtime::spawn(async move {
-        let packages = download::missing_packages(&store.models_dir(), &store.speaker_models_dir());
+        let packages =
+            download::missing_packages(&store.models_dir(), &store.speaker_models_dir(), store.settings().asr_model);
         let publish = |status: DownloadStatus| {
             *shared.status.lock().unwrap() = status.clone();
             let _ = app.emit(DOWNLOAD_PROGRESS, status);
@@ -499,6 +500,12 @@ fn download_models(app: AppHandle, state: State<'_, App>) -> Result<(), String> 
         });
     });
     Ok(())
+}
+
+/// Bytes a second this connection fetches model files at, for the estimates in Settings.
+#[tauri::command]
+async fn probe_download_speed() -> Option<f64> {
+    download::probe_speed().await
 }
 
 #[tauri::command]
@@ -800,6 +807,7 @@ fn main() {
             download_status,
             import_recording,
             quit_app,
+            probe_download_speed,
         ])
         .build(tauri::generate_context!())
         .expect("ZillaNote could not start")

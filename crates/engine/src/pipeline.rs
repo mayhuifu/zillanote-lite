@@ -21,8 +21,6 @@ use crate::transcript::{Segment, Transcript};
 use crate::turns::{Piece, Turn, seconds_by_speaker, split_at_turns};
 use crate::voices::{self, MeetingSpeaker};
 
-pub const MODEL: Qwen3AsrModel = Qwen3AsrModel::Large;
-
 /// For when the app leaves: a recognizer still running would keep gigabytes of memory.
 pub fn stop_servers() {
     let _ = kill_stale_servers();
@@ -122,8 +120,9 @@ impl Pipeline {
         let share = if speakers.is_empty() { 0.0 } else { SPEAKERS_SHARE };
 
         let settings = self.store.settings();
+        let model = settings.asr_model;
         let mut server = self.start_server(server_config).await?;
-        let client = Qwen3AsrClient::new(&server.base_url(), MODEL)
+        let client = Qwen3AsrClient::new(&server.base_url(), model)
             .map_err(|e| e.to_string())?
             .with_vocabulary(&settings.vocabulary);
 
@@ -163,7 +162,7 @@ impl Pipeline {
 
         let transcript = Transcript {
             duration_seconds,
-            engine: MODEL.as_str().to_string(),
+            engine: model.as_str().to_string(),
             segments,
         };
         if transcript.is_empty() {
@@ -313,7 +312,7 @@ impl Pipeline {
 
     /// What the recognizer needs to start, or what is missing.
     fn server_config(&self) -> Result<LlamaServerConfig, String> {
-        let files = MODEL.locate_files(&self.store.models_dir()).ok_or_else(|| {
+        let files = self.store.settings().asr_model.locate_files(&self.store.models_dir()).ok_or_else(|| {
             format!("{MODEL_MISSING} Download it on the home view: this recording is transcribed as soon as it is here.")
         })?;
         let binary = find_llama_server(&self.bundled_server_dirs).ok_or_else(describe_missing_binary)?;
@@ -452,12 +451,28 @@ fn llm_config(settings: &Settings) -> LlmConfig {
     }
 }
 
+/// One of the speech models, as the window lists them to choose from.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ModelChoice {
+    pub id: &'static str,
+    pub name: &'static str,
+    pub description: &'static str,
+    /// The whole model, and what of it is not on this machine yet.
+    pub size_bytes: u64,
+    pub missing_bytes: u64,
+    /// Memory it needs while transcribing.
+    pub memory_bytes: u64,
+    pub chosen: bool,
+}
+
 /// Whether transcription can start, and if not, what is missing.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct Readiness {
     pub model_found: bool,
+    pub model_name: &'static str,
     pub model_location: Option<String>,
     pub model_install_dir: String,
+    pub models: Vec<ModelChoice>,
     pub server_found: bool,
     pub server_location: Option<String>,
     /// Without them the transcript simply has no speaker names.
@@ -471,21 +486,36 @@ pub struct Readiness {
 impl Pipeline {
     pub fn readiness(&self) -> Readiness {
         let models_dir = self.store.models_dir();
-        let files = MODEL.locate_files(&models_dir);
-        let server = find_llama_server(&self.bundled_server_dirs);
         let settings = self.store.settings();
+        let model = settings.asr_model;
+        let files = model.locate_files(&models_dir);
+        let server = find_llama_server(&self.bundled_server_dirs);
 
         Readiness {
             model_found: files.is_some(),
+            model_name: model.display_name(),
             model_location: files
                 .and_then(|files| files.model.parent().map(|dir| dir.display().to_string())),
-            model_install_dir: MODEL.install_dir(&models_dir).display().to_string(),
+            model_install_dir: model.install_dir(&models_dir).display().to_string(),
+            models: Qwen3AsrModel::all()
+                .iter()
+                .map(|choice| ModelChoice {
+                    id: choice.as_str(),
+                    name: choice.display_name(),
+                    description: choice.description(),
+                    size_bytes: choice.size_bytes(),
+                    missing_bytes: choice.missing_downloads(&models_dir).iter().map(|file| file.size_bytes).sum(),
+                    memory_bytes: choice.memory_bytes(),
+                    chosen: *choice == model,
+                })
+                .collect(),
             server_found: server.is_some(),
             server_location: server.map(|path| path.display().to_string()),
             speaker_models_found: SpeakerModels::locate(&self.store.speaker_models_dir()).is_some(),
             download_bytes: crate::download::total_bytes(&crate::download::missing_packages(
                 &models_dir,
                 &self.store.speaker_models_dir(),
+                model,
             )),
             llm_configured: !settings.llm_base_url.trim().is_empty()
                 && !settings.llm_model.trim().is_empty(),

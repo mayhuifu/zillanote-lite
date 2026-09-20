@@ -9,7 +9,6 @@ speakers = { workspace = true }
 
 chrono = { workspace = true }
 cpal = { workspace = true }
-crc32fast = { workspace = true }
 dirs = { workspace = true }
 hound = { workspace = true }
 lettre = { workspace = true }
@@ -17,6 +16,7 @@ pulldown-cmark = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
 tokio = { workspace = true, features = ["fs", "io-util", "rt", "rt-multi-thread", "macros", "time"] }
 tracing = { workspace = true }
 

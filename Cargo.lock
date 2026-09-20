@@ -953,7 +953,6 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "cpal",
- "crc32fast",
  "dirs",
  "hound",
  "lettre",
@@ -969,6 +968,7 @@ dependencies = [
  "security-framework",
  "serde",
  "serde_json",
+ "sha2",
  "speakers",
  "tempfile",
  "tokio",
