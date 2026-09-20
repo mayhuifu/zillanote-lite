@@ -1,4 +1,7 @@
 # The speaker models run on ONNX Runtime, linked statically from the copy that
-# `node scripts/fetch-onnxruntime.mjs` puts here.
+# `node scripts/fetch-onnxruntime.mjs` puts here. Without the second line a copy that
+# Homebrew happens to have installed is found first and linked dynamically, and the app
+# then starts only on Macs that have it.
 [env]
 ORT_LIB_LOCATION = { value = "vendor/onnxruntime/lib", relative = true }
+LIBONNXRUNTIME_NO_PKG_CONFIG = "1"
