@@ -429,6 +429,8 @@ $("reset-prompt").addEventListener("click", async () => {
 });
 $("cancel-settings").addEventListener("click", () => $("settings").close());
 $("collapse").addEventListener("click", () => invoke("show_mini"));
+// Asks first when a recording or a meeting in the works would be cut short.
+$("quit").addEventListener("click", () => invoke("quit_app"));
 
 $("settings-form").addEventListener("submit", async (event) => {
   event.preventDefault();

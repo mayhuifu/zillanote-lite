@@ -1,4 +1,4 @@
-"""Draws the ZillaNote icon.
+"""Draws the ZillaNote icon: an ear in terracotta on warm paper.
 
     python3 scripts/make-icon.py                # needs Pillow
     cd app && pnpm dlx @tauri-apps/cli@2.11.4 icon icons/source-1024.png -o icons
@@ -18,33 +18,43 @@ BIG = SIZE * SCALE
 ROOT = Path(__file__).resolve().parent.parent
 
 
+# Warm paper and terracotta: the app sits next to Claude and should look at home there.
+PAPER_LIGHT, PAPER_DEEP = (252, 250, 245), (233, 225, 211)
+CLAY_LIGHT, CLAY_DEEP = (226, 140, 108), (189, 92, 60)
+CLAY_SHADOW = (120, 62, 36)
+
+
 def background():
-    """Deep blue, a little lighter toward the upper left, inside the macOS icon shape."""
+    """Warm ivory, a little lighter toward the upper left, inside the macOS icon shape, with
+    a hairline edge so the light shape holds against a light Dock or Finder window."""
     inset, radius = 100 * SCALE, 190 * SCALE
+    box = (inset, inset, BIG - inset, BIG - inset)
     shape = Image.new("L", (BIG, BIG), 0)
-    ImageDraw.Draw(shape).rounded_rectangle((inset, inset, BIG - inset, BIG - inset), radius, fill=255)
+    ImageDraw.Draw(shape).rounded_rectangle(box, radius, fill=255)
 
     small = 256  # the gradient is smooth, so it can be computed small and enlarged
     gradient = Image.new("RGB", (small, small))
     pixels = gradient.load()
-    inner, outer = (30, 84, 190), (5, 14, 48)
     for y in range(small):
         for x in range(small):
-            t = min(1.0, math.hypot(x / small - 0.32, y / small - 0.24) / 0.95) ** 1.15
-            pixels[x, y] = tuple(round(a + (b - a) * t) for a, b in zip(inner, outer))
+            t = min(1.0, math.hypot(x / small - 0.30, y / small - 0.22) / 0.95) ** 1.3
+            pixels[x, y] = tuple(round(a + (b - a) * t) for a, b in zip(PAPER_LIGHT, PAPER_DEEP))
 
     icon = Image.new("RGBA", (BIG, BIG), (0, 0, 0, 0))
     icon.paste(gradient.resize((BIG, BIG), Image.BICUBIC), (0, 0), shape)
+    edge = Image.new("L", (BIG, BIG), 0)
+    ImageDraw.Draw(edge).rounded_rectangle(box, radius, outline=255, width=3 * SCALE)
+    icon.paste(Image.new("RGBA", (BIG, BIG), (*CLAY_SHADOW, 255)), (0, 0), edge.point(lambda v: v * 0.16))
     return icon, shape
 
 
-def lay(icon, mask, top=(255, 255, 255), bottom=(198, 220, 255), shadow=True):
-    """Fills `mask` with a soft white-to-ice gradient over a blurred shadow."""
+def lay(icon, mask, top=CLAY_LIGHT, bottom=CLAY_DEEP, shadow=True):
+    """Fills `mask` with a terracotta gradient over a soft warm shadow."""
     if shadow:
-        dark = ImageChops.offset(mask, 0, 10 * SCALE).filter(ImageFilter.GaussianBlur(14 * SCALE))
-        icon.paste(Image.new("RGBA", (BIG, BIG), (2, 8, 36, 255)), (0, 0), dark.point(lambda v: v * 0.55))
+        dark = ImageChops.offset(mask, 0, 8 * SCALE).filter(ImageFilter.GaussianBlur(12 * SCALE))
+        icon.paste(Image.new("RGBA", (BIG, BIG), (*CLAY_SHADOW, 255)), (0, 0), dark.point(lambda v: v * 0.28))
     column = Image.new("RGB", (1, BIG))
-    lo, hi = 260 * SCALE, 780 * SCALE
+    lo, hi = 240 * SCALE, 800 * SCALE
     for y in range(BIG):
         t = min(1.0, max(0.0, (y - lo) / (hi - lo)))
         column.putpixel((0, y), tuple(round(a + (b - a) * t) for a, b in zip(top, bottom)))
@@ -78,27 +88,41 @@ def stroke(draw, points, width):
         draw.ellipse([x * SCALE - r, y * SCALE - r, x * SCALE + r, y * SCALE + r], fill=255)
 
 
-def z_mask():
-    """A pen-written Z: full horizontals, a lighter diagonal tucked into them, and a tail
-    that sweeps away to the right."""
+def line(draw, curves, width):
+    """One brush line through several curves; `width` runs from 0 to 1 over the whole line,
+    so the joins between the curves do not show."""
+    for index, points in enumerate(curves):
+        stroke(draw, points, lambda t, index=index: width((index + t) / len(curves)))
+
+
+def ear_mask():
+    """An ear, in two strokes of a brush: the rim, which comes up from the side of the head,
+    swells over the top and runs out in the curl of the lobe; and the fold inside it."""
     mask = Image.new("L", (BIG, BIG), 0)
     draw = ImageDraw.Draw(mask)
-    # The top stroke enters fine and ends full, where the diagonal leaves it; the bottom
-    # stroke starts full, where the diagonal arrives, and runs out to a point.
-    stroke(draw, [(258, 392), (352, 278), (566, 356), (736, 312)], lambda t: 22 + 82 * math.sin(math.pi * 0.62 * t) ** 0.8)
-    stroke(draw, [(728, 318), (626, 446), (430, 596), (312, 712)], lambda t: 40 + 34 * math.sin(math.pi * t))
-    stroke(draw, [(304, 718), (446, 646), (648, 776), (852, 636)], lambda t: 6 + 102 * math.sin(math.pi * (0.30 + 0.70 * t)) ** 0.8)
+    rim = [
+        [(348, 514), (324, 324), (428, 232), (536, 234)],
+        [(536, 234), (652, 237), (718, 334), (704, 446)],
+        [(704, 446), (692, 550), (588, 590), (564, 684)],
+        [(564, 684), (542, 770), (446, 794), (394, 736)],
+    ]
+    fold = [
+        [(604, 464), (616, 366), (496, 324), (452, 414)],
+        [(452, 414), (428, 468), (524, 502), (512, 574)],
+    ]
+    line(draw, rim, lambda u: 26 + 54 * math.sin(math.pi * min(1.0, u * 1.08)) ** 0.7)
+    line(draw, fold, lambda u: 14 + 38 * math.sin(math.pi * (0.12 + 0.88 * u)) ** 0.8)
     return mask
 
 
-def swash(icon):
-    lay(icon, z_mask())
+def ear(icon):
+    lay(icon, ear_mask())
 
 
 def tray(size=44):
     """The mark alone, black on nothing, for the menu bar: macOS tints a template image to
     suit a light or a dark bar. Drawn a little heavier, so the fine ends survive 22 points."""
-    mask = z_mask().resize((SIZE, SIZE), Image.LANCZOS).filter(ImageFilter.MaxFilter(15))
+    mask = ear_mask().resize((SIZE, SIZE), Image.LANCZOS).filter(ImageFilter.MaxFilter(15))
     left, top, right, bottom = mask.getbbox()
     side = max(right - left, bottom - top) * 1.12
     cx, cy = (left + right) / 2, (top + bottom) / 2
@@ -108,7 +132,7 @@ def tray(size=44):
     return image
 
 
-CONCEPTS = {"swash": swash}
+CONCEPTS = {"ear": ear}
 
 
 def render(concept):
@@ -121,7 +145,7 @@ def render(concept):
 
 
 def main():
-    concept = sys.argv[1] if len(sys.argv) > 1 else "swash"
+    concept = sys.argv[1] if len(sys.argv) > 1 else "ear"
     if concept == "preview":
         sheet = Image.new("RGBA", (1200, 470 * len(CONCEPTS)), (238, 238, 240, 255))
         for row, name in enumerate(CONCEPTS):

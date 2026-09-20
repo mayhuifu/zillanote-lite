@@ -23,6 +23,11 @@ use crate::voices::{self, MeetingSpeaker};
 
 pub const MODEL: Qwen3AsrModel = Qwen3AsrModel::Large;
 
+/// For when the app leaves: a recognizer still running would keep gigabytes of memory.
+pub fn stop_servers() {
+    let _ = kill_stale_servers();
+}
+
 /// How the error of a meeting that waits for the speech model starts. Such meetings are
 /// processed by themselves once the model has been downloaded.
 pub const MODEL_MISSING: &str = "The speech model is not on this Mac yet.";

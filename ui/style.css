@@ -1,26 +1,28 @@
 :root {
   color-scheme: light dark;
-  --bg: #fbfaf8;
+  /* Warm paper and terracotta, as in the icon. Red stays for recording and for trouble. */
+  --bg: #faf9f5;
   --surface: #ffffff;
-  --text: #1f1d1a;
-  --muted: #77726b;
-  --line: #e7e3dd;
-  --accent: #d93a2b;
-  --brand: #12357a;
-  --accent-soft: rgba(217, 58, 43, 0.14);
+  --text: #1f1e1d;
+  --muted: #73726c;
+  --line: #e8e6dc;
+  --accent: #d2452f;
+  --brand: #c96442;
+  --accent-soft: rgba(210, 69, 47, 0.13);
   --ok: #2f7d4f;
-  --warn-bg: #fff4e0;
-  --warn-text: #7a4d00;
+  --warn-bg: #f7ecd9;
+  --warn-text: #6f4a12;
   font: 15px/1.5 -apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #1b1a18;
-    --surface: #242320;
-    --text: #ece9e4;
-    --muted: #9b958c;
-    --line: #35332f;
+    --bg: #1f1e1d;
+    --surface: #2a2927;
+    --text: #f0eee6;
+    --muted: #a3a097;
+    --line: #3d3c38;
+    --brand: #d97757;
     --warn-bg: #3a2f17;
     --warn-text: #f1cf8a;
   }
@@ -74,7 +76,7 @@ button.primary { background: var(--brand); color: #fff; border-color: var(--bran
 .chip.done { background: rgba(47, 125, 79, 0.14); color: var(--ok); }
 .chip.failed { background: var(--accent-soft); color: var(--accent); }
 .progress { height: 3px; background: var(--line); border-radius: 3px; margin-top: 8px; overflow: hidden; }
-.progress span { display: block; height: 100%; width: 0; background: var(--accent); transition: width 0.3s; }
+.progress span { display: block; height: 100%; width: 0; background: var(--brand); transition: width 0.3s; }
 .progress.indeterminate span { width: 35%; animation: slide 1.4s ease-in-out infinite; }
 @keyframes slide { 0% { margin-left: -35%; } 100% { margin-left: 100%; } }
 .empty { color: var(--muted); text-align: center; margin-top: 28px; font-size: 13px; }
@@ -101,6 +103,7 @@ button.primary { background: var(--brand); color: #fff; border-color: var(--bran
 .transcript p { margin-bottom: 8px; }
 .transcript time { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; margin-right: 6px; }
 .actions { display: flex; align-items: center; gap: 6px; padding-top: 10px; border-top: 1px solid var(--line); }
+input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
 select, input, textarea { font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
 
 /* --- downloading the models --- */

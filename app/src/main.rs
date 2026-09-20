@@ -10,10 +10,10 @@ use engine::pipeline::{Pipeline, Readiness};
 use engine::recorder::Recording;
 use engine::store::{Meeting, Settings, Status, Store};
 use engine::templates::{DEFAULT_SYSTEM_PROMPT, TEMPLATES, Template};
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, State, WindowEvent};
-use tauri_plugin_dialog::DialogExt;
+use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, RunEvent, State, WindowEvent};
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
 const MEETING_UPDATED: &str = "meeting-updated";
 const RECORDING_LEVEL: &str = "recording-level";
@@ -23,6 +23,9 @@ const RECORDING_CHANGED: &str = "recording-changed";
 const NOTICE: &str = "notice";
 /// Carries a [`DownloadStatus`] while the models are fetched, and once more at the end.
 const DOWNLOAD_PROGRESS: &str = "download-progress";
+
+/// The Quit of the menu at the top of the screen (the menu-bar icon has a Quit of its own).
+const APP_QUIT: &str = "app-quit";
 
 const MAIN: &str = "main";
 const MINI: &str = "mini";
@@ -167,6 +170,12 @@ fn start(app: &AppHandle) -> Result<Meeting, String> {
 }
 
 fn stop(app: &AppHandle) -> Result<Meeting, String> {
+    stop_and(app, true)
+}
+
+/// Closes the recording properly. With `process`, it goes on to be transcribed; without
+/// (the app is leaving), it is kept for the next time.
+fn stop_and(app: &AppHandle, process: bool) -> Result<Meeting, String> {
     let state = app.state::<App>();
     let active = state
         .active
@@ -180,11 +189,17 @@ fn stop(app: &AppHandle) -> Result<Meeting, String> {
     let _ = state.record_item.set_text("Start recording");
     let mut meeting = state.store().meeting(&active.meeting_id)?;
     match summary {
-        Ok(summary) => {
+        Ok(summary) if process => {
             meeting.duration_seconds = summary.duration_seconds;
             meeting.status = Status::Transcribing;
             state.store().save_meeting(&meeting)?;
             process_in_background(app, &state, meeting.id.clone(), None);
+        }
+        Ok(summary) => {
+            meeting.duration_seconds = summary.duration_seconds;
+            meeting.status = Status::Failed;
+            meeting.error = Some("ZillaNote was closed before this was transcribed. Choose Transcribe again.".to_string());
+            state.store().save_meeting(&meeting)?;
         }
         Err(error) => {
             meeting.status = Status::Failed;
@@ -347,6 +362,51 @@ async fn send_test_email(settings: Settings) -> Result<(), String> {
     engine::email::send_test(&settings.email).await
 }
 
+/// Leaves the app. When that would cut something short, it asks first, and says what
+/// happens to the work; a recording under way is closed properly, never dropped.
+async fn request_quit(app: AppHandle) {
+    let (recording, working) = {
+        let state = app.state::<App>();
+        let recording = state.active.lock().is_ok_and(|active| active.is_some());
+        (recording, state.jobs.try_lock().is_err())
+    };
+    if recording || working {
+        let message = if recording {
+            "A recording is running. It will be stopped and kept: choose Transcribe again on it the next time you open ZillaNote."
+        } else {
+            "A meeting is still being worked on. Its recording is safe: choose Transcribe again on it the next time you open ZillaNote."
+        };
+        let dialog = app
+            .dialog()
+            .message(message)
+            .title("Quit ZillaNote?")
+            .kind(MessageDialogKind::Warning)
+            .buttons(MessageDialogButtons::OkCancelCustom("Quit".to_string(), "Keep running".to_string()));
+        // The dialog waits for the answer, which the main thread must not do.
+        let confirmed = tauri::async_runtime::spawn_blocking(move || dialog.blocking_show()).await;
+        if !confirmed.unwrap_or(false) {
+            return;
+        }
+    }
+    close_down(&app);
+    app.exit(0);
+}
+
+/// What has to happen whichever way the app goes: the recording closed into a whole file,
+/// and the recognizer, which holds gigabytes, not left running behind.
+fn close_down(app: &AppHandle) {
+    let recording = app.state::<App>().active.lock().is_ok_and(|active| active.is_some());
+    if recording {
+        let _ = stop_and(app, false);
+    }
+    engine::pipeline::stop_servers();
+}
+
+#[tauri::command]
+async fn quit_app(app: AppHandle) {
+    request_quit(app).await;
+}
+
 /// Makes a meeting from a recording made elsewhere: the one at `path`, or the one the user
 /// picks when there is none. Nothing picked is not an error.
 #[tauri::command]
@@ -506,6 +566,50 @@ fn place_mini(app: &AppHandle) {
     let _ = mini.set_position(PhysicalPosition::new(x, y));
 }
 
+/// The menu at the top of the screen. Quit is ours rather than the system's, so that ⌘Q
+/// takes the same careful way out as every other Quit; Edit has to be there for copy and
+/// paste to work in the window's text fields.
+fn build_app_menu(app: &AppHandle) -> tauri::Result<Menu<tauri::Wry>> {
+    let application = Submenu::with_items(
+        app,
+        "ZillaNote",
+        true,
+        &[
+            &PredefinedMenuItem::about(app, None, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::hide(app, None)?,
+            &PredefinedMenuItem::hide_others(app, None)?,
+            &PredefinedMenuItem::show_all(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &MenuItem::with_id(app, APP_QUIT, "Quit ZillaNote", true, Some("CmdOrCtrl+Q"))?,
+        ],
+    )?;
+    let edit = Submenu::with_items(
+        app,
+        "Edit",
+        true,
+        &[
+            &PredefinedMenuItem::undo(app, None)?,
+            &PredefinedMenuItem::redo(app, None)?,
+            &PredefinedMenuItem::separator(app)?,
+            &PredefinedMenuItem::cut(app, None)?,
+            &PredefinedMenuItem::copy(app, None)?,
+            &PredefinedMenuItem::paste(app, None)?,
+            &PredefinedMenuItem::select_all(app, None)?,
+        ],
+    )?;
+    let window = Submenu::with_items(
+        app,
+        "Window",
+        true,
+        &[
+            &PredefinedMenuItem::minimize(app, None)?,
+            &PredefinedMenuItem::close_window(app, None)?,
+        ],
+    )?;
+    Menu::with_items(app, &[&application, &edit, &window])
+}
+
 /// The icon in the menu bar: recording without looking for the window, and the way out.
 fn build_tray(app: &AppHandle) -> tauri::Result<MenuItem<tauri::Wry>> {
     let record = MenuItem::with_id(app, "record", "Start recording", true, None::<&str>)?;
@@ -544,11 +648,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<MenuItem<tauri::Wry>> {
                     Ok(())
                 }
                 "quit" => {
-                    // A recording under way is closed properly first: the audio is what matters.
-                    if recording() {
-                        let _ = stop(app);
-                    }
-                    app.exit(0);
+                    tauri::async_runtime::spawn(request_quit(app.clone()));
                     Ok(())
                 }
                 _ => Ok(()),
@@ -608,6 +708,12 @@ fn main() {
             store.mark_interrupted();
             store.migrate_secrets();
             let record_item = build_tray(app.handle())?;
+            app.set_menu(build_app_menu(app.handle())?)?;
+            app.on_menu_event(|app, event| {
+                if event.id().as_ref() == APP_QUIT {
+                    tauri::async_runtime::spawn(request_quit(app.clone()));
+                }
+            });
             app.manage(App {
                 pipeline: Pipeline {
                     store,
@@ -659,7 +765,15 @@ fn main() {
             cancel_download,
             download_status,
             import_recording,
+            quit_app,
         ])
-        .run(tauri::generate_context!())
-        .expect("ZillaNote could not start");
+        .build(tauri::generate_context!())
+        .expect("ZillaNote could not start")
+        // Quit from the Dock, a log-out, a shutdown: no question can be asked any more, but
+        // the recording is still closed into a whole file and the recognizer stopped.
+        .run(|app, event| {
+            if let RunEvent::Exit = event {
+                close_down(app);
+            }
+        });
 }

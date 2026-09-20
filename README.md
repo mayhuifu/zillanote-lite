@@ -31,8 +31,13 @@ background, on this machine except for the language model you choose.
   as soon as it is written. The server is worked out from the sender's address for Gmail,
   Outlook.com, iCloud, Yahoo, QQ, 163 and 126; any other provider shows a server field. A
   mail that fails never fails the meeting: the reason is shown with a "Send again" button.
-- **Menu bar:** a Z in the menu bar starts and stops a recording, opens the window, imports
-  a recording and quits. Quitting while recording closes the recording properly first.
+- **Menu bar:** an ear in the menu bar starts and stops a recording, opens the window,
+  imports a recording and quits.
+- **Quitting:** the × that appears on the bar under the pointer, the power button in the
+  window, the menu-bar icon and ⌘Q all take the same way out. If a recording is running or
+  a meeting is being worked on, it asks first and says what happens to it. Whichever way the
+  app goes (Quit from the Dock and a shutdown included, where nothing can be asked), a
+  recording under way is closed into a whole file and the speech engine is stopped.
 - **Import:** "Import a recording", or a file dropped on the window, makes a meeting from a
   recording made elsewhere (WAV anywhere; m4a, mp3, mp4 and the rest through macOS's own
   converter). The original is only read.
@@ -98,7 +103,7 @@ cargo test -p engine live_recording -- --ignored --nocapture      # plays 8 s of
 | `crates/engine` | recorder (microphone and system audio), mixdown, pause-based chunking, cutting at speaker turns, named voices, model download, pipeline, minutes, templates, file store |
 | `app` | the Tauri shell: commands, events, one window |
 | `ui` | two pages (`mini.html` the bar, `index.html` the full window): plain HTML, CSS and JavaScript, no build step |
-| `scripts/make-icon.py` | draws the icon and the menu-bar mark; `tauri icon` turns the icon into every format |
+| `scripts/make-icon.py` | draws the icon (an ear in terracotta on warm paper) and the menu-bar mark; `tauri icon` turns the icon into every format |
 
 ## Not built yet
 

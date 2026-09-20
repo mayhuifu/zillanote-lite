@@ -81,4 +81,5 @@ await listen("meeting-updated", (event) => {
 const current = await invoke("recording_state");
 if (current) recording = { startedAt: Date.now() - current.elapsed_seconds * 1000 };
 render();
+$("quit").addEventListener("click", () => invoke("quit_app"));
 invoke("ui_ready");
