@@ -31,6 +31,17 @@ background, on this machine except for the language model you choose.
   as soon as it is written. The server is worked out from the sender's address for Gmail,
   Outlook.com, iCloud, Yahoo, QQ, 163 and 126; any other provider shows a server field. A
   mail that fails never fails the meeting: the reason is shown with a "Send again" button.
+- **Menu bar:** a Z in the menu bar starts and stops a recording, opens the window, imports
+  a recording and quits. Quitting while recording closes the recording properly first.
+- **Import:** "Import a recording", or a file dropped on the window, makes a meeting from a
+  recording made elsewhere (WAV anywhere; m4a, mp3, mp4 and the rest through macOS's own
+  converter). The original is only read.
+- **Secrets:** the installed app keeps the API key and the mail password in the macOS
+  keychain, and moves any that an older version left in `settings.json`. If the keychain
+  refuses, the secret stays in the file rather than being lost. Development builds
+  (`cargo run`) keep them in `settings.json`, readable only by you: the keychain ties an item
+  to the program's signature, and a development build has a new one every time. Use
+  `ZILLANOTE_DATA_DIR` for a development data folder of its own.
 - **Storage:** plain files, one folder per meeting, under
   `~/Library/Application Support/com.zillanote.lite/meetings/`.
 
@@ -54,7 +65,7 @@ points the app at another data folder (used by the tests).
 cd app && pnpm dlx @tauri-apps/cli@2.11.4 build -- --offline
 ```
 
-The `.app` and `.dmg` land in `target/release/bundle/` (13 MB installer, 30 MB installed).
+The `.app` and `.dmg` land in `target/release/bundle/` (20 MB installer, 45 MB installed, of which the speech engine is 24 MB and ONNX Runtime 15 MB).
 `cargo clean` gives the build folder back whenever disk space matters; a full rebuild takes
 about a minute.
 
@@ -69,6 +80,7 @@ cargo test -p qwen3-asr --test live -- --ignored --nocapture
 cargo test -p engine live_smtp -- --ignored --nocapture   # real mail servers, wrong password, sends nothing
 ZILLANOTE_SPEAKER_MODELS=<folder> ZILLANOTE_TEST_AUDIO=/path/to.wav \
   cargo test -p speakers --test live -- --ignored --nocapture    # the speaker models on a real recording
+cargo test -p engine live_keychain -- --ignored --nocapture     # a throwaway item in the login keychain
 cargo test -p engine live_download -- --ignored --nocapture     # fetches the speaker models (32 MB) and checks them
 cargo test -p engine live_system_audio -- --ignored --nocapture   # plays a sound, expects to hear it in the tap
 cargo test -p engine live_recording -- --ignored --nocapture      # plays 8 s of noise, records both channels
@@ -83,9 +95,10 @@ cargo test -p engine live_recording -- --ignored --nocapture      # plays 8 s of
 | `crates/engine` | recorder (microphone and system audio), mixdown, pause-based chunking, cutting at speaker turns, named voices, model download, pipeline, minutes, templates, file store |
 | `app` | the Tauri shell: commands, events, one window |
 | `ui` | two pages (`mini.html` the bar, `index.html` the full window): plain HTML, CSS and JavaScript, no build step |
-| `scripts/make-icon.py` | draws the icon; `tauri icon` turns it into every format |
+| `scripts/make-icon.py` | draws the icon and the menu-bar mark; `tauri icon` turns the icon into every format |
 
 ## Not built yet
 
-- A menu-bar icon and import of existing recordings.
-- Keeping the API key and the mail password in the system keychain (today: `settings.json`, readable only by you).
+- Windows. The recorder's system audio, the import converter and the keychain are macOS
+  code behind `cfg`; each needs its Windows counterpart.
+- Signing and notarizing the app, which also ends the keychain question at every update.

@@ -13,8 +13,10 @@
 //! ```
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use crate::email::EmailSettings;
+use crate::secrets::{self, SecretStore};
 use crate::templates::{DEFAULT_SYSTEM_PROMPT, DEFAULT_TEMPLATE};
 use crate::transcript::Transcript;
 use crate::voices::{MeetingSpeaker, Voice};
@@ -101,22 +103,34 @@ impl Default for Settings {
 #[derive(Debug, Clone)]
 pub struct Store {
     root: PathBuf,
+    /// Where the API key and the mail password go instead of `settings.json`, if anywhere.
+    secrets: Option<Arc<dyn SecretStore>>,
 }
 
 impl Store {
+    /// The user's own data folder, with secrets in the system keychain where this build
+    /// uses it. A folder named by `ZILLANOTE_DATA_DIR` is somebody's experiment: it keeps
+    /// to itself, secrets included.
     pub fn open_default() -> Result<Self, String> {
-        let root = match std::env::var_os(DATA_DIR_ENV) {
-            Some(dir) => PathBuf::from(dir),
-            None => dirs::data_dir()
-                .ok_or_else(|| "No application data folder on this system.".to_string())?
-                .join(APP_FOLDER),
-        };
-        Self::open(root)
+        match std::env::var_os(DATA_DIR_ENV) {
+            Some(dir) => Self::open(PathBuf::from(dir)),
+            None => {
+                let root = dirs::data_dir()
+                    .ok_or_else(|| "No application data folder on this system.".to_string())?
+                    .join(APP_FOLDER);
+                Ok(Self::open(root)?.with_secrets(secrets::system()))
+            }
+        }
     }
 
     pub fn open(root: PathBuf) -> Result<Self, String> {
         std::fs::create_dir_all(root.join("meetings")).map_err(|e| e.to_string())?;
-        Ok(Self { root })
+        Ok(Self { root, secrets: None })
+    }
+
+    pub fn with_secrets(mut self, secrets: Option<Arc<dyn SecretStore>>) -> Self {
+        self.secrets = secrets;
+        self
     }
 
     pub fn models_dir(&self) -> PathBuf {
@@ -138,15 +152,41 @@ impl Store {
     // --- settings ---
 
     pub fn settings(&self) -> Settings {
-        std::fs::read_to_string(self.root.join("settings.json"))
+        let mut settings: Settings = std::fs::read_to_string(self.root.join("settings.json"))
             .ok()
             .and_then(|text| serde_json::from_str(&text).ok())
-            .unwrap_or_default()
+            .unwrap_or_default();
+        // A secret still in the file (an older version wrote it, or the keychain refused it)
+        // counts; otherwise it is wherever secrets are kept.
+        if let Some(secrets) = &self.secrets {
+            for (name, value) in [
+                (secrets::LLM_API_KEY, &mut settings.llm_api_key),
+                (secrets::EMAIL_PASSWORD, &mut settings.email.password),
+            ] {
+                if value.is_empty() {
+                    *value = secrets.get(name).unwrap_or_default();
+                }
+            }
+        }
+        settings
     }
 
     pub fn save_settings(&self, settings: &Settings) -> Result<(), String> {
         let path = self.root.join("settings.json");
-        write_json(&path, settings)?;
+        let mut on_disk = settings.clone();
+        if let Some(secrets) = &self.secrets {
+            for (name, value) in [
+                (secrets::LLM_API_KEY, &mut on_disk.llm_api_key),
+                (secrets::EMAIL_PASSWORD, &mut on_disk.email.password),
+            ] {
+                // A secret the keychain will not take stays in the file: never lost.
+                match secrets.set(name, value) {
+                    Ok(()) => value.clear(),
+                    Err(error) => tracing::warn!(name, %error, "secret_kept_in_settings_file"),
+                }
+            }
+        }
+        write_json(&path, &on_disk)?;
         // It can hold an API key.
         #[cfg(unix)]
         {
@@ -154,6 +194,13 @@ impl Store {
             let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
         }
         Ok(())
+    }
+
+    /// Moves secrets an older version left in `settings.json` to where they are kept now.
+    pub fn migrate_secrets(&self) {
+        if self.secrets.is_some() {
+            let _ = self.save_settings(&self.settings());
+        }
     }
 
     // --- meetings ---
@@ -335,6 +382,60 @@ mod tests {
         assert_eq!(settings.llm_model, "m");
         assert_eq!(settings.system_prompt, DEFAULT_SYSTEM_PROMPT);
         assert!(settings.record_system_audio);
+    }
+
+    fn secret_settings() -> Settings {
+        let mut settings = Settings::default();
+        settings.llm_api_key = "sk-secret".to_string();
+        settings.email.password = "app-password".to_string();
+        settings
+    }
+
+    #[test]
+    fn secrets_go_to_the_keychain_and_not_into_the_file() {
+        let (dir, store) = store();
+        let keychain = Arc::new(secrets::MemorySecrets::default());
+        let store = store.with_secrets(Some(keychain.clone()));
+
+        store.save_settings(&secret_settings()).unwrap();
+
+        let file = std::fs::read_to_string(dir.path().join("settings.json")).unwrap();
+        assert!(!file.contains("sk-secret") && !file.contains("app-password"), "{file}");
+        assert_eq!(keychain.values.lock().unwrap().len(), 2);
+        assert_eq!(store.settings(), secret_settings());
+
+        // Clearing a secret in Settings clears it for good.
+        store.save_settings(&Settings::default()).unwrap();
+        assert!(keychain.values.lock().unwrap().is_empty());
+        assert_eq!(store.settings(), Settings::default());
+    }
+
+    #[test]
+    fn secrets_an_older_version_left_in_the_file_are_moved_on_start() {
+        let (dir, store) = store();
+        store.save_settings(&secret_settings()).unwrap();
+        let store = store.with_secrets(Some(Arc::new(secrets::MemorySecrets::default())));
+        assert_eq!(store.settings(), secret_settings());
+
+        store.migrate_secrets();
+
+        assert!(!std::fs::read_to_string(dir.path().join("settings.json")).unwrap().contains("sk-secret"));
+        assert_eq!(store.settings(), secret_settings());
+    }
+
+    #[test]
+    fn a_keychain_that_refuses_never_costs_the_secret() {
+        let (dir, store) = store();
+        let broken = secrets::MemorySecrets {
+            broken: true,
+            ..Default::default()
+        };
+        let store = store.with_secrets(Some(Arc::new(broken)));
+
+        store.save_settings(&secret_settings()).unwrap();
+
+        assert!(std::fs::read_to_string(dir.path().join("settings.json")).unwrap().contains("sk-secret"));
+        assert_eq!(store.settings(), secret_settings());
     }
 
     #[test]

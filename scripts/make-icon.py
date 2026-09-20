@@ -78,7 +78,7 @@ def stroke(draw, points, width):
         draw.ellipse([x * SCALE - r, y * SCALE - r, x * SCALE + r, y * SCALE + r], fill=255)
 
 
-def swash(icon):
+def z_mask():
     """A pen-written Z: full horizontals, a lighter diagonal tucked into them, and a tail
     that sweeps away to the right."""
     mask = Image.new("L", (BIG, BIG), 0)
@@ -88,7 +88,24 @@ def swash(icon):
     stroke(draw, [(258, 392), (352, 278), (566, 356), (736, 312)], lambda t: 22 + 82 * math.sin(math.pi * 0.62 * t) ** 0.8)
     stroke(draw, [(728, 318), (626, 446), (430, 596), (312, 712)], lambda t: 40 + 34 * math.sin(math.pi * t))
     stroke(draw, [(304, 718), (446, 646), (648, 776), (852, 636)], lambda t: 6 + 102 * math.sin(math.pi * (0.30 + 0.70 * t)) ** 0.8)
-    lay(icon, mask)
+    return mask
+
+
+def swash(icon):
+    lay(icon, z_mask())
+
+
+def tray(size=44):
+    """The mark alone, black on nothing, for the menu bar: macOS tints a template image to
+    suit a light or a dark bar. Drawn a little heavier, so the fine ends survive 22 points."""
+    mask = z_mask().resize((SIZE, SIZE), Image.LANCZOS).filter(ImageFilter.MaxFilter(15))
+    left, top, right, bottom = mask.getbbox()
+    side = max(right - left, bottom - top) * 1.12
+    cx, cy = (left + right) / 2, (top + bottom) / 2
+    glyph = mask.crop((int(cx - side / 2), int(cy - side / 2), int(cx + side / 2), int(cy + side / 2)))
+    image = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    image.putalpha(glyph.resize((size, size), Image.LANCZOS))
+    return image
 
 
 CONCEPTS = {"swash": swash}
@@ -125,7 +142,8 @@ def main():
     icon.save(ROOT / "app" / "icons" / "source-1024.png")
     # The pages show the mark without the transparent margin.
     icon.crop((100, 100, SIZE - 100, SIZE - 100)).resize((128, 128), Image.LANCZOS).save(ROOT / "ui" / "logo.png")
-    print(f"wrote app/icons/source-1024.png and ui/logo.png ({concept})")
+    tray().save(ROOT / "app" / "icons" / "tray.png")
+    print(f"wrote app/icons/source-1024.png, app/icons/tray.png and ui/logo.png ({concept})")
 
 
 if __name__ == "__main__":

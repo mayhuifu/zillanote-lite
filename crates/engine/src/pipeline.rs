@@ -48,6 +48,28 @@ impl Pipeline {
         self.summarize(&mut meeting, on_update).await;
     }
 
+    /// Makes a meeting from a recording made elsewhere, ready for [`Pipeline::process`]. The
+    /// file is copied in as 16 kHz WAV; the original is left alone.
+    pub fn import(&self, source: &std::path::Path) -> Result<Meeting, String> {
+        let template = self.store.settings().default_template;
+        let mut meeting = self.store.create_meeting(chrono::Local::now(), &template)?;
+        match crate::import::import_audio(source, &self.store.audio_path(&meeting.id)) {
+            Ok(seconds) => {
+                if let Some(name) = source.file_stem() {
+                    meeting.title = name.to_string_lossy().into_owned();
+                }
+                meeting.duration_seconds = seconds;
+                meeting.status = Status::Transcribing;
+                self.store.save_meeting(&meeting)?;
+                Ok(meeting)
+            }
+            Err(error) => {
+                let _ = self.store.delete_meeting(&meeting.id);
+                Err(error)
+            }
+        }
+    }
+
     /// Writes the minutes again from the existing transcript, with another template.
     pub async fn rewrite_minutes(
         &self,
@@ -429,6 +451,38 @@ mod tests {
     use std::sync::Mutex;
 
     use super::*;
+
+    #[test]
+    fn an_imported_recording_becomes_a_meeting_named_after_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path().join("data")).unwrap();
+        let pipeline = Pipeline {
+            store: store.clone(),
+            bundled_server_dirs: Vec::new(),
+        };
+        let source = dir.path().join("Budget review.wav");
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: 8_000,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut writer = hound::WavWriter::create(&source, spec).unwrap();
+        (0..16_000).for_each(|i| writer.write_sample((i % 100) as i16).unwrap());
+        writer.finalize().unwrap();
+
+        let meeting = pipeline.import(&source).unwrap();
+
+        assert_eq!((meeting.title.as_str(), meeting.status), ("Budget review", Status::Transcribing));
+        assert!((meeting.duration_seconds - 2.0).abs() < 0.01);
+        assert!(store.audio_path(&meeting.id).is_file() && source.is_file());
+
+        // A file that is no recording leaves no meeting behind.
+        let text = dir.path().join("notes.wav");
+        std::fs::write(&text, b"not samples").unwrap();
+        assert!(pipeline.import(&text).is_err());
+        assert_eq!(store.meetings().len(), 1);
+    }
 
     /// Needs `llama-server`, the Qwen3-ASR files and a WAV recording on this machine. With
     /// `ZILLANOTE_SPEAKER_MODELS` pointing at the two speaker models, and a recording of two

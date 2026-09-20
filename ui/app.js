@@ -78,6 +78,14 @@ $("record").addEventListener("click", async () => {
   }
 });
 
+// --- import ---
+
+async function importRecording(path) {
+  const meeting = await call("import_recording", { path });
+  if (meeting) toast(`Importing ${meeting.title}`);
+}
+$("import").addEventListener("click", () => importRecording(null));
+
 // --- meetings list ---
 
 function upsert(meeting) {
@@ -430,6 +438,9 @@ await listen("recording-changed", (event) => {
   renderRecorder();
 });
 await listen("notice", (event) => toast(event.payload));
+await listen("tauri://drag-drop", async (event) => {
+  for (const path of event.payload.paths || []) await importRecording(path);
+});
 await listen("download-progress", (event) => {
   // The end of a download changes what is missing; until then only the numbers move.
   if (event.payload.running) renderDownload(event.payload);

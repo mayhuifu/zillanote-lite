@@ -10,7 +10,10 @@ use engine::pipeline::{Pipeline, Readiness};
 use engine::recorder::Recording;
 use engine::store::{Meeting, Settings, Status, Store};
 use engine::templates::{DEFAULT_SYSTEM_PROMPT, TEMPLATES, Template};
+use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, State, WindowEvent};
+use tauri_plugin_dialog::DialogExt;
 
 const MEETING_UPDATED: &str = "meeting-updated";
 const RECORDING_LEVEL: &str = "recording-level";
@@ -35,6 +38,8 @@ struct App {
     /// One background job at a time: there is one recognizer and it is memory hungry.
     jobs: Arc<tokio::sync::Mutex<()>>,
     download: Arc<Download>,
+    /// The menu-bar item that starts and stops a recording, so its words can follow.
+    record_item: MenuItem<tauri::Wry>,
 }
 
 #[derive(Default)]
@@ -106,7 +111,17 @@ struct RecordingState {
 }
 
 #[tauri::command]
-fn start_recording(app: AppHandle, state: State<'_, App>) -> Result<Meeting, String> {
+fn start_recording(app: AppHandle) -> Result<Meeting, String> {
+    start(&app)
+}
+
+#[tauri::command]
+fn stop_recording(app: AppHandle) -> Result<Meeting, String> {
+    stop(&app)
+}
+
+fn start(app: &AppHandle) -> Result<Meeting, String> {
+    let state = app.state::<App>();
     let mut active = state.active.lock().map_err(|e| e.to_string())?;
     if active.is_some() {
         return Err("A recording is already running.".to_string());
@@ -140,6 +155,7 @@ fn start_recording(app: AppHandle, state: State<'_, App>) -> Result<Meeting, Str
                 }),
             );
             let _ = app.emit(MEETING_UPDATED, &meeting);
+            let _ = state.record_item.set_text("Stop recording");
             Ok(meeting)
         }
         Err(error) => {
@@ -150,8 +166,8 @@ fn start_recording(app: AppHandle, state: State<'_, App>) -> Result<Meeting, Str
     }
 }
 
-#[tauri::command]
-fn stop_recording(app: AppHandle, state: State<'_, App>) -> Result<Meeting, String> {
+fn stop(app: &AppHandle) -> Result<Meeting, String> {
+    let state = app.state::<App>();
     let active = state
         .active
         .lock()
@@ -161,13 +177,14 @@ fn stop_recording(app: AppHandle, state: State<'_, App>) -> Result<Meeting, Stri
 
     let summary = active.recording.stop();
     let _ = app.emit(RECORDING_CHANGED, None::<RecordingState>);
+    let _ = state.record_item.set_text("Start recording");
     let mut meeting = state.store().meeting(&active.meeting_id)?;
     match summary {
         Ok(summary) => {
             meeting.duration_seconds = summary.duration_seconds;
             meeting.status = Status::Transcribing;
             state.store().save_meeting(&meeting)?;
-            process_in_background(&app, &state, meeting.id.clone(), None);
+            process_in_background(app, &state, meeting.id.clone(), None);
         }
         Err(error) => {
             meeting.status = Status::Failed;
@@ -330,6 +347,36 @@ async fn send_test_email(settings: Settings) -> Result<(), String> {
     engine::email::send_test(&settings.email).await
 }
 
+/// Makes a meeting from a recording made elsewhere: the one at `path`, or the one the user
+/// picks when there is none. Nothing picked is not an error.
+#[tauri::command]
+async fn import_recording(app: AppHandle, path: Option<String>) -> Result<Option<Meeting>, String> {
+    let source = match path {
+        Some(path) => PathBuf::from(path),
+        None => {
+            let picked = app
+                .dialog()
+                .file()
+                .set_title("Import a recording")
+                .add_filter("Recordings", engine::import::EXTENSIONS)
+                .blocking_pick_file();
+            match picked.and_then(|file| file.into_path().ok()) {
+                Some(path) => path,
+                None => return Ok(None),
+            }
+        }
+    };
+
+    let pipeline = app.state::<App>().pipeline.clone();
+    // Converting an hour of audio takes a moment; keep it off the async threads.
+    let meeting = tauri::async_runtime::spawn_blocking(move || pipeline.import(&source))
+        .await
+        .map_err(|e| e.to_string())??;
+    let _ = app.emit(MEETING_UPDATED, &meeting);
+    process_in_background(&app, &app.state::<App>(), meeting.id.clone(), None);
+    Ok(Some(meeting))
+}
+
 /// Fetches the models that are not on this machine yet, in the background.
 #[tauri::command]
 fn download_models(app: AppHandle, state: State<'_, App>) -> Result<(), String> {
@@ -442,6 +489,60 @@ fn place_mini(app: &AppHandle) {
     let _ = mini.set_position(PhysicalPosition::new(x, y));
 }
 
+/// The icon in the menu bar: recording without looking for the window, and the way out.
+fn build_tray(app: &AppHandle) -> tauri::Result<MenuItem<tauri::Wry>> {
+    let record = MenuItem::with_id(app, "record", "Start recording", true, None::<&str>)?;
+    let menu = Menu::with_items(
+        app,
+        &[
+            &record,
+            &PredefinedMenuItem::separator(app)?,
+            &MenuItem::with_id(app, "open", "Open ZillaNote", true, None::<&str>)?,
+            &MenuItem::with_id(app, "import", "Import a recording…", true, None::<&str>)?,
+            &PredefinedMenuItem::separator(app)?,
+            &MenuItem::with_id(app, "quit", "Quit ZillaNote", true, None::<&str>)?,
+        ],
+    )?;
+
+    TrayIconBuilder::with_id("tray")
+        .icon(tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?)
+        .icon_as_template(true)
+        .tooltip("ZillaNote")
+        .menu(&menu)
+        .on_menu_event(|app, event| {
+            let recording = || app.state::<App>().active.lock().is_ok_and(|active| active.is_some());
+            let result = match event.id().as_ref() {
+                "record" if recording() => stop(app).map(|_| ()),
+                "record" => start(app).map(|_| ()),
+                "open" => show_main(app.clone()),
+                "import" => {
+                    let app = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        if let Err(error) = import_recording(app.clone(), None).await {
+                            let _ = app.emit(NOTICE, error);
+                        }
+                    });
+                    Ok(())
+                }
+                "quit" => {
+                    // A recording under way is closed properly first: the audio is what matters.
+                    if recording() {
+                        let _ = stop(app);
+                    }
+                    app.exit(0);
+                    Ok(())
+                }
+                _ => Ok(()),
+            };
+            if let Err(error) = result {
+                let _ = show_main(app.clone());
+                let _ = app.emit(NOTICE, error);
+            }
+        })
+        .build(app)?;
+    Ok(record)
+}
+
 fn process_in_background(app: &AppHandle, state: &App, id: String, template: Option<String>) {
     let app = app.clone();
     let pipeline = state.pipeline.clone();
@@ -482,9 +583,12 @@ fn main() {
         .init();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let store = Store::open_default()?;
             store.mark_interrupted();
+            store.migrate_secrets();
+            let record_item = build_tray(app.handle())?;
             app.manage(App {
                 pipeline: Pipeline {
                     store,
@@ -493,6 +597,7 @@ fn main() {
                 active: Mutex::new(None),
                 jobs: Arc::new(tokio::sync::Mutex::new(())),
                 download: Arc::default(),
+                record_item,
             });
             place_mini(app.handle());
             Ok(())
@@ -534,6 +639,7 @@ fn main() {
             download_models,
             cancel_download,
             download_status,
+            import_recording,
         ])
         .run(tauri::generate_context!())
         .expect("ZillaNote could not start");
