@@ -3,8 +3,12 @@
 Record a meeting, get minutes. One big button; transcription and minutes happen in the
 background, on this machine except for the language model you choose.
 
-- **Speech to text:** Qwen3-ASR 1.7B through a bundled `llama-server`, started only while a
-  recording is being transcribed (about 3.3 GB of memory for that time, none when idle).
+- **Speech to text:** Qwen3-ASR through a bundled `llama-server`, started only while a
+  recording is being transcribed (memory for that time only, none when idle). Settings
+  offers four models, each with its download size, the time that takes on this connection
+  (measured, not guessed) and the memory it needs: 1.7B at 8 bits (the default, and the one
+  for meetings that mix English and Mandarin), 1.7B at 4 bits, 0.6B at 8 bits and 0.6B at 4
+  bits. Both precisions of a size share one audio encoder, so switching costs one file.
 - **Minutes:** any OpenAI-compatible endpoint (LM Studio, Ollama, or a hosted API with a key).
   The system prompt, editable in Settings (its default is in
   [`docs/default-system-prompt.md`](docs/default-system-prompt.md)), holds the rules and,
@@ -71,9 +75,13 @@ cargo run -p zillanote                  # the app
 ```
 
 The Qwen3-ASR model files are picked up from LM Studio if it already has
-`ggml-org/Qwen3-ASR-1.7B-GGUF`. Otherwise the window offers to download them (2.8 GB),
-together with the speaker models (32 MB): pinned revisions, checked against pinned sizes
-and checksums, and a download that stops continues from where it was. A recording made before the
+`ggml-org/Qwen3-ASR-1.7B-GGUF`. Otherwise the window offers to download the chosen model
+(0.9 to 2.8 GB), together with the speaker models (32 MB): pinned revisions, checked against
+pinned sizes and SHA-256 checksums, and a download that stops continues from where it was.
+Every file has a second source for where the first cannot be reached (hf-mirror.com for
+Hugging Face, jsDelivr for GitHub); a mirror is not trusted, only the checksum is. Web
+requests use the system's TLS, so they work behind the proxies that curl and Safari work
+behind. A recording made before the
 speech model is there fails at once with that reason, and is transcribed by itself when the
 download ends. `ZILLANOTE_DATA_DIR`
 points the app at another data folder (used by the tests).
