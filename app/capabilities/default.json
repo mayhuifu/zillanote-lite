@@ -1,7 +1,13 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The one window may call the app's own commands and listen to its events.",
-  "windows": ["main"],
-  "permissions": ["core:default"]
+  "description": "Both windows may call the app's own commands, listen to its events, and be dragged.",
+  "windows": [
+    "main",
+    "mini"
+  ],
+  "permissions": [
+    "core:default",
+    "core:window:allow-start-dragging"
+  ]
 }

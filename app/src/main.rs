@@ -7,10 +7,15 @@ use engine::pipeline::{Pipeline, Readiness};
 use engine::recorder::Recording;
 use engine::store::{Meeting, Settings, Status, Store};
 use engine::templates::{DEFAULT_SYSTEM_PROMPT, TEMPLATES, Template};
-use tauri::{AppHandle, Emitter, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, State, WindowEvent};
 
 const MEETING_UPDATED: &str = "meeting-updated";
 const RECORDING_LEVEL: &str = "recording-level";
+/// Carries the running recording, or nothing once it stops, to both windows.
+const RECORDING_CHANGED: &str = "recording-changed";
+
+const MAIN: &str = "main";
+const MINI: &str = "mini";
 
 struct Active {
     meeting_id: String,
@@ -37,7 +42,7 @@ struct MeetingDetail {
     transcript: Option<String>,
 }
 
-#[derive(serde::Serialize)]
+#[derive(Clone, serde::Serialize)]
 struct RecordingState {
     meeting_id: String,
     elapsed_seconds: f64,
@@ -63,6 +68,14 @@ fn start_recording(app: AppHandle, state: State<'_, App>) -> Result<Meeting, Str
                 meeting_id: meeting.id.clone(),
                 recording,
             });
+            let _ = app.emit(
+                RECORDING_CHANGED,
+                Some(RecordingState {
+                    meeting_id: meeting.id.clone(),
+                    elapsed_seconds: 0.0,
+                }),
+            );
+            let _ = app.emit(MEETING_UPDATED, &meeting);
             Ok(meeting)
         }
         Err(error) => {
@@ -83,6 +96,7 @@ fn stop_recording(app: AppHandle, state: State<'_, App>) -> Result<Meeting, Stri
         .ok_or_else(|| "No recording is running.".to_string())?;
 
     let summary = active.recording.stop();
+    let _ = app.emit(RECORDING_CHANGED, None::<RecordingState>);
     let mut meeting = state.store().meeting(&active.meeting_id)?;
     match summary {
         Ok(summary) => {
@@ -97,6 +111,7 @@ fn stop_recording(app: AppHandle, state: State<'_, App>) -> Result<Meeting, Stri
             state.store().save_meeting(&meeting)?;
         }
     }
+    let _ = app.emit(MEETING_UPDATED, &meeting);
     Ok(meeting)
 }
 
@@ -209,15 +224,52 @@ fn templates() -> &'static [Template] {
 
 #[tauri::command]
 fn readiness(state: State<'_, App>) -> Readiness {
-    let readiness = state.pipeline.readiness();
-    // The page asks for this last while starting, so this line also says the page loaded.
-    tracing::info!(
-        model_found = readiness.model_found,
-        server_found = readiness.server_found,
-        llm_configured = readiness.llm_configured,
-        "readiness_checked"
-    );
-    readiness
+    state.pipeline.readiness()
+}
+
+/// Each page calls this once its script has run to the end, so a page that failed to start
+/// shows up as a missing line in the log.
+#[tauri::command]
+fn ui_ready(window: tauri::WebviewWindow) {
+    tracing::info!(window = window.label(), "ui_ready");
+}
+
+/// The full window, in place of the bar.
+#[tauri::command]
+fn show_main(app: AppHandle) -> Result<(), String> {
+    let main = app.get_webview_window(MAIN).ok_or("The main window is missing.")?;
+    main.show().map_err(|e| e.to_string())?;
+    let _ = main.unminimize();
+    let _ = main.set_focus();
+    if let Some(mini) = app.get_webview_window(MINI) {
+        let _ = mini.hide();
+    }
+    Ok(())
+}
+
+/// Back to the bar.
+#[tauri::command]
+fn show_mini(app: AppHandle) -> Result<(), String> {
+    let mini = app.get_webview_window(MINI).ok_or("The bar is missing.")?;
+    mini.show().map_err(|e| e.to_string())?;
+    if let Some(main) = app.get_webview_window(MAIN) {
+        let _ = main.hide();
+    }
+    Ok(())
+}
+
+/// The bar starts at the right edge of the main screen, half way down.
+fn place_mini(app: &AppHandle) {
+    let Some(mini) = app.get_webview_window(MINI) else {
+        return;
+    };
+    let (Ok(Some(monitor)), Ok(size)) = (mini.primary_monitor(), mini.outer_size()) else {
+        return;
+    };
+    let margin = (16.0 * monitor.scale_factor()) as i32;
+    let x = monitor.position().x + monitor.size().width as i32 - size.width as i32 - margin;
+    let y = monitor.position().y + (monitor.size().height as i32 - size.height as i32) / 2;
+    let _ = mini.set_position(PhysicalPosition::new(x, y));
 }
 
 fn process_in_background(app: &AppHandle, state: &App, id: String, template: Option<String>) {
@@ -271,7 +323,17 @@ fn main() {
                 active: Mutex::new(None),
                 jobs: Arc::new(tokio::sync::Mutex::new(())),
             });
+            place_mini(app.handle());
             Ok(())
+        })
+        // Closing the full window goes back to the bar; the app keeps running.
+        .on_window_event(|window, event| {
+            if window.label() == MAIN
+                && let WindowEvent::CloseRequested { api, .. } = event
+            {
+                api.prevent_close();
+                let _ = show_mini(window.app_handle().clone());
+            }
         })
         .invoke_handler(tauri::generate_handler![
             start_recording,
@@ -289,6 +351,9 @@ fn main() {
             default_system_prompt,
             templates,
             readiness,
+            show_main,
+            show_mini,
+            ui_ready,
         ])
         .run(tauri::generate_context!())
         .expect("ZillaNote could not start");

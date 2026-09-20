@@ -8,6 +8,10 @@ background, on this machine except for the language model you choose.
 - **Minutes:** any OpenAI-compatible endpoint (LM Studio, Ollama, or a hosted API with a key).
   Three templates: discussion flow, business meeting, interview. The system prompt is
   editable in Settings.
+- **Window:** it starts as a small bar that floats at the right edge of the screen: logo, level
+  meter, record/stop, a progress ring while a meeting is processed. The blue tab at the bottom
+  opens the full window; closing that window (or its down-arrow) goes back to the bar. Drag the
+  bar by its logo.
 - **Storage:** plain files, one folder per meeting, under
   `~/Library/Application Support/com.zillanote.lite/meetings/`.
 
@@ -48,7 +52,8 @@ cargo test -p qwen3-asr --test live -- --ignored --nocapture
 | `crates/qwen3-asr` | model files, `llama-server` lifecycle, transcription client |
 | `crates/engine` | recorder, pause-based chunking, pipeline, minutes, templates, file store |
 | `app` | the Tauri shell: commands, events, one window |
-| `ui` | the page: plain HTML, CSS and JavaScript, no build step |
+| `ui` | two pages (`mini.html` the bar, `index.html` the full window): plain HTML, CSS and JavaScript, no build step |
+| `scripts/make-icon.py` | draws the icon; `tauri icon` turns it into every format |
 
 ## Not built yet
 

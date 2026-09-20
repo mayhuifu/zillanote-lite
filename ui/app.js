@@ -1,7 +1,6 @@
+import { BUSY, clock, invoke, listen } from "./common.js";
 import { renderMarkdown, escapeHtml } from "./markdown.js";
 
-const { invoke } = window.__TAURI__.core;
-const { listen } = window.__TAURI__.event;
 const $ = (id) => document.getElementById(id);
 
 const STATUS_LABEL = {
@@ -11,7 +10,6 @@ const STATUS_LABEL = {
   done: "Done",
   failed: "Failed",
 };
-const BUSY = new Set(["recording", "transcribing", "summarizing"]);
 
 let meetings = [];
 let openId = null;
@@ -36,14 +34,6 @@ async function call(command, args) {
     toast(String(error));
     throw error;
   }
-}
-
-function clock(seconds) {
-  const total = Math.max(0, Math.floor(seconds));
-  const h = Math.floor(total / 3600);
-  const m = String(Math.floor((total % 3600) / 60)).padStart(2, "0");
-  const s = String(total % 60).padStart(2, "0");
-  return h ? `${h}:${m}:${s}` : `${m}:${s}`;
 }
 
 function when(meeting) {
@@ -78,15 +68,7 @@ $("record").addEventListener("click", async () => {
   const button = $("record");
   button.disabled = true;
   try {
-    if (recording) {
-      const meeting = await call("stop_recording");
-      recording = null;
-      upsert(meeting);
-    } else {
-      const meeting = await call("start_recording");
-      recording = { meetingId: meeting.id, startedAt: Date.now() };
-      upsert(meeting);
-    }
+    await call(recording ? "stop_recording" : "start_recording");
   } finally {
     button.disabled = false;
     renderRecorder();
@@ -278,6 +260,7 @@ $("reset-prompt").addEventListener("click", async () => {
   $("system-prompt").value = await call("default_system_prompt");
 });
 $("cancel-settings").addEventListener("click", () => $("settings").close());
+$("collapse").addEventListener("click", () => invoke("show_mini"));
 
 $("settings-form").addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -300,6 +283,13 @@ $("settings-form").addEventListener("submit", async (event) => {
 // --- start ---
 
 await listen("meeting-updated", (event) => upsert(event.payload));
+// Recording can be started and stopped from the side bar as well as from here.
+await listen("recording-changed", (event) => {
+  recording = event.payload
+    ? { meetingId: event.payload.meeting_id, startedAt: Date.now() - event.payload.elapsed_seconds * 1000 }
+    : null;
+  renderRecorder();
+});
 await listen("recording-level", (event) => {
   // Speech sits around 0.02 to 0.2 RMS; map that onto a ring between 0.82 and 1.0.
   const level = Math.min(1, Math.sqrt(event.payload) * 1.6);
@@ -321,3 +311,4 @@ if (current) {
 renderRecorder();
 renderList();
 showReadiness();
+invoke("ui_ready");

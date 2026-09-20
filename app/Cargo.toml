@@ -11,7 +11,7 @@ engine = { workspace = true }
 
 chrono = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
-tauri = { workspace = true }
+tauri = { workspace = true, features = ["macos-private-api"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "sync"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }

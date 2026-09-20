@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>ZillaNote</title>
+    <link rel="stylesheet" href="mini.css" />
+  </head>
+  <body>
+    <div class="bar" data-tauri-drag-region>
+      <img class="logo" src="logo.png" alt="ZillaNote" draggable="false" data-tauri-drag-region />
+
+      <div id="meter" class="meter" data-tauri-drag-region aria-hidden="true">
+        <i></i><i></i><i></i><i></i><i></i>
+      </div>
+
+      <hr />
+
+      <button id="record" class="record" title="Start recording" aria-label="Start recording">
+        <span class="shape"></span>
+      </button>
+      <div id="timer" class="timer" data-tauri-drag-region></div>
+
+      <button id="status" class="status" hidden>
+        <span class="ring"></span>
+        <span class="glyph"></span>
+      </button>
+
+      <button id="expand" class="expand" title="Open ZillaNote" aria-label="Open ZillaNote">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 15l7-7 7 7" />
+        </svg>
+      </button>
+    </div>
+    <script type="module" src="mini.js"></script>
+  </body>
+</html>

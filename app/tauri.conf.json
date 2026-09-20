@@ -10,20 +10,45 @@
     "withGlobalTauri": true,
     "windows": [
       {
+        "label": "mini",
+        "url": "mini.html",
+        "title": "ZillaNote",
+        "width": 64,
+        "height": 236,
+        "resizable": false,
+        "maximizable": false,
+        "minimizable": false,
+        "decorations": false,
+        "transparent": true,
+        "shadow": true,
+        "alwaysOnTop": true,
+        "visibleOnAllWorkspaces": true,
+        "skipTaskbar": true,
+        "acceptFirstMouse": true,
+        "focus": false
+      },
+      {
+        "label": "main",
+        "url": "index.html",
         "title": "ZillaNote",
         "width": 440,
         "height": 720,
         "minWidth": 380,
-        "minHeight": 560
+        "minHeight": 560,
+        "visible": false
       }
     ],
     "security": {
       "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src ipc: http://ipc.localhost"
-    }
+    },
+    "macOSPrivateApi": true
   },
   "bundle": {
     "active": true,
-    "targets": ["app", "dmg"],
+    "targets": [
+      "app",
+      "dmg"
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
