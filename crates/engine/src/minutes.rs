@@ -136,7 +136,7 @@ async fn chat(config: &LlmConfig, system_prompt: &str, user: &str) -> Result<Str
     Ok(content)
 }
 
-fn is_loopback(url: &str) -> bool {
+pub(crate) fn is_loopback(url: &str) -> bool {
     ["://localhost", "://127.0.0.1", "://[::1]"]
         .iter()
         .any(|host| url.contains(host))

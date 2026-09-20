@@ -9,6 +9,7 @@ speakers = { path = "crates/speakers" }
 
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 cpal = "0.17"
+crc32fast = "1"
 dirs = "6.0.0"
 hound = "3.5.1"
 libc = "0.2"

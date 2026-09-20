@@ -43,8 +43,10 @@ cargo run -p zillanote                  # the app
 ```
 
 The Qwen3-ASR model files are picked up from LM Studio if it already has
-`ggml-org/Qwen3-ASR-1.7B-GGUF`; otherwise put the two GGUF files in the folder Settings
-shows. `ZILLANOTE_DATA_DIR` points the app at another data folder (used by the tests).
+`ggml-org/Qwen3-ASR-1.7B-GGUF`. Otherwise the window offers to download them (2.8 GB),
+together with the speaker models (32 MB): pinned revisions, checked against pinned sizes
+and checksums, and a download that stops continues from where it was. `ZILLANOTE_DATA_DIR`
+points the app at another data folder (used by the tests).
 
 ## Build the installer
 
@@ -67,6 +69,7 @@ cargo test -p qwen3-asr --test live -- --ignored --nocapture
 cargo test -p engine live_smtp -- --ignored --nocapture   # real mail servers, wrong password, sends nothing
 ZILLANOTE_SPEAKER_MODELS=<folder> ZILLANOTE_TEST_AUDIO=/path/to.wav \
   cargo test -p speakers --test live -- --ignored --nocapture    # the speaker models on a real recording
+cargo test -p engine live_download -- --ignored --nocapture     # fetches the speaker models (32 MB) and checks them
 cargo test -p engine live_system_audio -- --ignored --nocapture   # plays a sound, expects to hear it in the tap
 cargo test -p engine live_recording -- --ignored --nocapture      # plays 8 s of noise, records both channels
 ```
@@ -77,13 +80,12 @@ cargo test -p engine live_recording -- --ignored --nocapture      # plays 8 s of
 |---|---|
 | `crates/qwen3-asr` | model files, `llama-server` lifecycle, transcription client |
 | `crates/speakers` | who spoke when: segmentation, Kaldi filterbank features, voice embeddings, clustering, matching named voices (from Anarlog's MIT layer, see `LICENSE-ANARLOG`) |
-| `crates/engine` | recorder (microphone and system audio), mixdown, pause-based chunking, cutting at speaker turns, named voices, pipeline, minutes, templates, file store |
+| `crates/engine` | recorder (microphone and system audio), mixdown, pause-based chunking, cutting at speaker turns, named voices, model download, pipeline, minutes, templates, file store |
 | `app` | the Tauri shell: commands, events, one window |
 | `ui` | two pages (`mini.html` the bar, `index.html` the full window): plain HTML, CSS and JavaScript, no build step |
 | `scripts/make-icon.py` | draws the icon; `tauri icon` turns it into every format |
 
 ## Not built yet
 
-- Downloading the model from inside the app.
 - A menu-bar icon and import of existing recordings.
 - Keeping the API key and the mail password in the system keychain (today: `settings.json`, readable only by you).

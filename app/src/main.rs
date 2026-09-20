@@ -1,8 +1,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
+use engine::download::{self, Retry};
 use engine::pipeline::{Pipeline, Readiness};
 use engine::recorder::Recording;
 use engine::store::{Meeting, Settings, Status, Store};
@@ -15,6 +18,8 @@ const RECORDING_LEVEL: &str = "recording-level";
 const RECORDING_CHANGED: &str = "recording-changed";
 /// Something the user should read that is not tied to one meeting.
 const NOTICE: &str = "notice";
+/// Carries a [`DownloadStatus`] while the models are fetched, and once more at the end.
+const DOWNLOAD_PROGRESS: &str = "download-progress";
 
 const MAIN: &str = "main";
 const MINI: &str = "mini";
@@ -29,6 +34,22 @@ struct App {
     active: Mutex<Option<Active>>,
     /// One background job at a time: there is one recognizer and it is memory hungry.
     jobs: Arc<tokio::sync::Mutex<()>>,
+    download: Arc<Download>,
+}
+
+#[derive(Default)]
+struct Download {
+    running: AtomicBool,
+    cancel: AtomicBool,
+    status: Mutex<DownloadStatus>,
+}
+
+#[derive(Clone, Default, serde::Serialize)]
+struct DownloadStatus {
+    running: bool,
+    done_bytes: u64,
+    total_bytes: u64,
+    error: Option<String>,
 }
 
 impl App {
@@ -309,6 +330,63 @@ async fn send_test_email(settings: Settings) -> Result<(), String> {
     engine::email::send_test(&settings.email).await
 }
 
+/// Fetches the models that are not on this machine yet, in the background.
+#[tauri::command]
+fn download_models(app: AppHandle, state: State<'_, App>) -> Result<(), String> {
+    let shared = state.download.clone();
+    if shared.running.swap(true, Ordering::SeqCst) {
+        return Ok(());
+    }
+    shared.cancel.store(false, Ordering::SeqCst);
+    let store = state.store().clone();
+
+    tauri::async_runtime::spawn(async move {
+        let packages = download::missing_packages(&store.models_dir(), &store.speaker_models_dir());
+        let publish = |status: DownloadStatus| {
+            *shared.status.lock().unwrap() = status.clone();
+            let _ = app.emit(DOWNLOAD_PROGRESS, status);
+        };
+        let last = Mutex::new(Instant::now() - Duration::from_secs(1));
+        let on_progress = |progress: download::Progress| {
+            let mut last = last.lock().unwrap();
+            if last.elapsed() >= Duration::from_millis(200) {
+                *last = Instant::now();
+                publish(DownloadStatus {
+                    running: true,
+                    done_bytes: progress.done_bytes,
+                    total_bytes: progress.total_bytes,
+                    error: None,
+                });
+            }
+        };
+
+        let result = download::download(&packages, Retry::default(), &shared.cancel, &on_progress).await;
+        let total_bytes = download::total_bytes(&packages);
+        let stopped = result.as_ref().is_err_and(|error| error == download::CANCELLED);
+        shared.running.store(false, Ordering::SeqCst);
+        // Read before publishing, which takes the same lock.
+        let arrived = shared.status.lock().unwrap().done_bytes;
+        publish(DownloadStatus {
+            running: false,
+            done_bytes: if result.is_ok() { total_bytes } else { arrived },
+            total_bytes,
+            // Stopping is the user's own doing, not a problem to report.
+            error: result.err().filter(|_| !stopped),
+        });
+    });
+    Ok(())
+}
+
+#[tauri::command]
+fn cancel_download(state: State<'_, App>) {
+    state.download.cancel.store(true, Ordering::SeqCst);
+}
+
+#[tauri::command]
+fn download_status(state: State<'_, App>) -> DownloadStatus {
+    state.download.status.lock().map(|status| status.clone()).unwrap_or_default()
+}
+
 /// Where macOS lists the apps allowed to record the computer's sound.
 #[tauri::command]
 fn open_system_audio_settings() -> Result<(), String> {
@@ -414,6 +492,7 @@ fn main() {
                 },
                 active: Mutex::new(None),
                 jobs: Arc::new(tokio::sync::Mutex::new(())),
+                download: Arc::default(),
             });
             place_mini(app.handle());
             Ok(())
@@ -452,6 +531,9 @@ fn main() {
             name_speaker,
             list_voices,
             forget_voice,
+            download_models,
+            cancel_download,
+            download_status,
         ])
         .run(tauri::generate_context!())
         .expect("ZillaNote could not start");

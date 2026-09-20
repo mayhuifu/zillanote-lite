@@ -911,6 +911,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "cpal",
+ "crc32fast",
  "dirs",
  "hound",
  "lettre",
@@ -929,6 +930,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
+ "wiremock",
 ]
 
 [[package]]

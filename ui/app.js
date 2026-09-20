@@ -18,6 +18,7 @@ let activeTab = "minutes";
 let recording = null; // { meetingId, startedAt }
 let templates = [];
 let speakerLabels = [];
+let missing = null; // { bytes, what } while models are still to be downloaded
 
 // --- helpers ---
 
@@ -274,22 +275,53 @@ async function showReadiness() {
   if (!ready.server_found) {
     problems.push("The speech engine (llama-server) was not found. Run: node scripts/fetch-llama-server.mjs");
   }
-  if (!ready.model_found) {
-    problems.push(
-      `The Qwen3-ASR model files were not found. Download ggml-org/Qwen3-ASR-1.7B-GGUF in LM Studio, or put the two GGUF files in ${ready.model_install_dir}`,
-    );
-  }
   if (!ready.llm_configured) {
     problems.push("No language model is chosen yet, so recordings will be transcribed but get no minutes. Open Settings.");
   }
   $("notice").hidden = problems.length === 0;
   $("notice").textContent = problems.join("\n\n");
+  missing = ready.download_bytes
+    ? {
+        bytes: ready.download_bytes,
+        what: !ready.model_found
+          ? "The speech model is not on this Mac yet. Recordings wait for it."
+          : "Two small models are needed to tell speakers apart.",
+      }
+    : null;
+  renderDownload(await call("download_status"));
   $("readiness").textContent = [
     `Speech model: ${ready.model_found ? ready.model_location : "not found"}`,
     `Speech engine: ${ready.server_found ? ready.server_location : "not found"}`,
     `Speaker names: ${ready.speaker_models_found ? "on" : "off, the speaker models are not installed"}`,
   ].join("\n");
 }
+
+// --- downloading the models ---
+
+const gigabytes = (bytes) => (bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${Math.round(bytes / 1e6)} MB`);
+
+function renderDownload(status) {
+  $("download").hidden = !missing && !status.running;
+  if ($("download").hidden) return;
+
+  const bar = $("download-bar");
+  bar.hidden = !status.running;
+  bar.firstElementChild.style.width = `${status.total_bytes ? (100 * status.done_bytes) / status.total_bytes : 0}%`;
+  $("download-start").hidden = status.running;
+  $("download-stop").hidden = !status.running;
+  $("download-start").textContent = status.error || status.done_bytes ? "Continue the download" : `Download (${gigabytes(missing?.bytes || 0)})`;
+  $("download-text").textContent = status.running
+    ? `Downloading: ${gigabytes(status.done_bytes)} of ${gigabytes(status.total_bytes)}`
+    : status.error
+      ? `${status.error} What has arrived is kept.`
+      : missing?.what || "";
+}
+
+$("download-start").addEventListener("click", async () => {
+  await call("download_models");
+  renderDownload({ running: true, done_bytes: 0, total_bytes: missing?.bytes || 0 });
+});
+$("download-stop").addEventListener("click", () => call("cancel_download"));
 
 async function showVoices() {
   const voices = await call("list_voices");
@@ -398,6 +430,11 @@ await listen("recording-changed", (event) => {
   renderRecorder();
 });
 await listen("notice", (event) => toast(event.payload));
+await listen("download-progress", (event) => {
+  // The end of a download changes what is missing; until then only the numbers move.
+  if (event.payload.running) renderDownload(event.payload);
+  else showReadiness();
+});
 await listen("recording-level", (event) => {
   // Speech sits around 0.02 to 0.2 RMS; map that onto a ring between 0.82 and 1.0.
   const level = Math.min(1, Math.sqrt(event.payload) * 1.6);

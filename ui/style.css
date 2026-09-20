@@ -103,6 +103,11 @@ button.primary { background: var(--brand); color: #fff; border-color: var(--bran
 .actions { display: flex; align-items: center; gap: 6px; padding-top: 10px; border-top: 1px solid var(--line); }
 select, input, textarea { font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
 
+/* --- downloading the models --- */
+.download { margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; font-size: 13px; display: flex; flex-direction: column; gap: 8px; }
+.download p { margin: 0; }
+.download .row { display: flex; gap: 8px; align-items: center; }
+
 /* --- speakers --- */
 .speakers { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 0 8px; }
 .speaker { font-size: 12px; padding: 3px 10px; border-radius: 99px; border: 1px dashed var(--line); background: none; color: var(--muted); cursor: pointer; }

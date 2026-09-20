@@ -392,6 +392,8 @@ pub struct Readiness {
     pub server_location: Option<String>,
     /// Without them the transcript simply has no speaker names.
     pub speaker_models_found: bool,
+    /// What downloading the missing models would fetch.
+    pub download_bytes: u64,
     pub llm_configured: bool,
     pub email_configured: bool,
 }
@@ -411,6 +413,10 @@ impl Pipeline {
             server_found: server.is_some(),
             server_location: server.map(|path| path.display().to_string()),
             speaker_models_found: SpeakerModels::locate(&self.store.speaker_models_dir()).is_some(),
+            download_bytes: crate::download::total_bytes(&crate::download::missing_packages(
+                &models_dir,
+                &self.store.speaker_models_dir(),
+            )),
             llm_configured: !settings.llm_base_url.trim().is_empty()
                 && !settings.llm_model.trim().is_empty(),
             email_configured: settings.email.is_configured(),
