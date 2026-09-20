@@ -73,6 +73,8 @@ pub struct Settings {
     pub vocabulary: Vec<String>,
     pub max_chars_per_call: usize,
     pub email: EmailSettings,
+    /// Record what the computer plays (the other side of a call) next to the microphone.
+    pub record_system_audio: bool,
 }
 
 impl Default for Settings {
@@ -87,6 +89,7 @@ impl Default for Settings {
             vocabulary: Vec::new(),
             max_chars_per_call: 24_000,
             email: EmailSettings::default(),
+            record_system_audio: true,
         }
     }
 }
@@ -301,6 +304,7 @@ mod tests {
 
         assert_eq!(settings.llm_model, "m");
         assert_eq!(settings.system_prompt, DEFAULT_SYSTEM_PROMPT);
+        assert!(settings.record_system_audio);
     }
 
     #[test]

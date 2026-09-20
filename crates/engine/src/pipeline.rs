@@ -7,10 +7,11 @@ use qwen3_asr::{
     describe_missing_model, find_llama_server, kill_stale_servers,
 };
 
-use crate::audio::{TARGET_RATE, read_wav_16k_mono};
+use crate::audio::{TARGET_RATE, read_wav_16k_channels};
 use crate::chunker::{ChunkerConfig, speech_chunks};
 use crate::email;
 use crate::minutes::{LlmConfig, write_minutes};
+use crate::mixdown::recognition_signal;
 use crate::store::{Meeting, Settings, Status, Store};
 use crate::templates::template;
 use crate::transcript::{Segment, Transcript};
@@ -61,7 +62,7 @@ impl Pipeline {
         self.update(meeting, Status::Transcribing, 0.0, on_update);
 
         let audio_path = self.store.audio_path(&meeting.id);
-        let samples = tokio::task::spawn_blocking(move || read_wav_16k_mono(&audio_path))
+        let samples = tokio::task::spawn_blocking(move || read_wav_16k_channels(&audio_path).map(recognition_signal))
             .await
             .map_err(|e| e.to_string())??;
         let duration_seconds = samples.len() as f64 / TARGET_RATE as f64;

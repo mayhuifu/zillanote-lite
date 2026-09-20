@@ -10,6 +10,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock", "serd
 cpal = "0.17"
 dirs = "6.0.0"
 hound = "3.5.1"
+libc = "0.2"
 lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls", "aws-lc-rs", "webpki-roots", "hostname"] }
 pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "system-proxy"] }
@@ -23,6 +24,13 @@ tokio = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 wiremock = "0.6"
+
+# macOS only, for the system audio tap. cpal already brings all of these in.
+objc2 = "0.6"
+objc2-core-audio = { version = "0.3", default-features = false, features = ["std", "AudioHardware", "objc2", "objc2-foundation", "objc2-core-audio-types"] }
+objc2-core-audio-types = { version = "0.3", default-features = false, features = ["std"] }
+objc2-core-foundation = { version = "0.3", default-features = false, features = ["std", "CFDictionary"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSArray", "NSDictionary", "NSString", "NSUUID", "NSValue"] }
 
 tauri = { version = "2.11", features = [] }
 tauri-build = { version = "2.6", features = [] }

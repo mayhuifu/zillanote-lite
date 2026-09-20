@@ -264,6 +264,7 @@ $("open-settings").addEventListener("click", async () => {
   $("default-template").value = settings.default_template;
   $("system-prompt").value = settings.system_prompt;
   $("vocabulary").value = settings.vocabulary.join("\n");
+  $("system-audio").checked = settings.record_system_audio;
   $("email-to").value = settings.email.to;
   $("email-from").value = settings.email.from;
   $("email-password").value = settings.email.password;
@@ -291,6 +292,7 @@ function readSettings() {
     system_prompt: $("system-prompt").value,
     vocabulary: $("vocabulary").value.split("\n").map((term) => term.trim()).filter(Boolean),
     max_chars_per_call: Number($("settings").dataset.maxChars) || 24000,
+    record_system_audio: $("system-audio").checked,
     email: {
       to: $("email-to").value.trim(),
       from: $("email-from").value.trim(),
@@ -312,6 +314,8 @@ $("test-email").addEventListener("click", async () => {
     button.textContent = "Send a test email";
   }
 });
+
+$("open-system-audio").addEventListener("click", () => call("open_system_audio_settings"));
 
 $("reset-prompt").addEventListener("click", async () => {
   $("system-prompt").value = await call("default_system_prompt");
@@ -337,6 +341,7 @@ await listen("recording-changed", (event) => {
     : null;
   renderRecorder();
 });
+await listen("notice", (event) => toast(event.payload));
 await listen("recording-level", (event) => {
   // Speech sits around 0.02 to 0.2 RMS; map that onto a ring between 0.82 and 1.0.
   const level = Math.min(1, Math.sqrt(event.payload) * 1.6);

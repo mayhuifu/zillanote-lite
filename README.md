@@ -8,6 +8,12 @@ background, on this machine except for the language model you choose.
 - **Minutes:** any OpenAI-compatible endpoint (LM Studio, Ollama, or a hosted API with a key).
   Three templates: discussion flow, business meeting, interview. The system prompt is
   editable in Settings.
+- **Calls:** the computer's own sound is recorded next to the microphone (a second channel
+  in `audio.wav`), so the other side of a Teams or Zoom call is in the transcript. It needs
+  macOS 14.2 and the "System Audio Recording" permission, asked for on the first recording;
+  without either, the microphone is recorded alone. On loudspeakers the microphone hears the
+  other side a second time: that echo is found by how the two channels' loudness moves
+  together and left out of what is transcribed. It can be turned off in Settings.
 - **Window:** it starts as a small bar that floats at the right edge of the screen: logo, level
   meter, record/stop, a progress ring while a meeting is processed. The blue tab at the bottom
   opens the full window; closing that window (or its down-arrow) goes back to the bar. Drag the
@@ -49,6 +55,8 @@ node --test ui/tests/*.mjs                   # the Markdown renderer
 ZILLANOTE_TEST_AUDIO=/path/to.wav cargo test -p engine live_pipeline -- --ignored --nocapture
 cargo test -p qwen3-asr --test live -- --ignored --nocapture
 cargo test -p engine live_smtp -- --ignored --nocapture   # real mail servers, wrong password, sends nothing
+cargo test -p engine live_system_audio -- --ignored --nocapture   # plays a sound, expects to hear it in the tap
+cargo test -p engine live_recording -- --ignored --nocapture      # plays 8 s of noise, records both channels
 ```
 
 ## Layout
@@ -56,15 +64,13 @@ cargo test -p engine live_smtp -- --ignored --nocapture   # real mail servers, w
 | Path | What |
 |---|---|
 | `crates/qwen3-asr` | model files, `llama-server` lifecycle, transcription client |
-| `crates/engine` | recorder, pause-based chunking, pipeline, minutes, templates, file store |
+| `crates/engine` | recorder (microphone and system audio), mixdown, pause-based chunking, pipeline, minutes, templates, file store |
 | `app` | the Tauri shell: commands, events, one window |
 | `ui` | two pages (`mini.html` the bar, `index.html` the full window): plain HTML, CSS and JavaScript, no build step |
 | `scripts/make-icon.py` | draws the icon; `tauri icon` turns it into every format |
 
 ## Not built yet
 
-- System audio capture, so the other side of a Teams or Zoom call is recorded (today: the
-  microphone only).
 - Speaker labels (diarization) and remembered voices.
 - Downloading the model from inside the app.
 - A menu-bar icon and import of existing recordings.

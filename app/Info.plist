@@ -4,5 +4,7 @@
 <dict>
   <key>NSMicrophoneUsageDescription</key>
   <string>ZillaNote records your meetings so it can transcribe them on this Mac.</string>
+  <key>NSAudioCaptureUsageDescription</key>
+  <string>ZillaNote records what the other people in a call say, so they appear in the transcript. The sound stays on this Mac.</string>
 </dict>
 </plist>

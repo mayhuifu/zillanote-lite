@@ -102,6 +102,21 @@ pub fn rms(samples: &[f32]) -> f32 {
 
 /// Reads a WAV file as 16 kHz mono, whatever its own rate, width and channel count.
 pub fn read_wav_16k_mono(path: &Path) -> Result<Vec<f32>, String> {
+    let channels = read_wav_16k_channels(path)?;
+    let count = channels.len().max(1) as f32;
+    let mut channels = channels.into_iter();
+    let mut mono = channels.next().unwrap_or_default();
+    for channel in channels {
+        for (sum, sample) in mono.iter_mut().zip(channel) {
+            *sum += sample;
+        }
+    }
+    mono.iter_mut().for_each(|sample| *sample /= count);
+    Ok(mono)
+}
+
+/// Reads a WAV file as 16 kHz, one vector per channel.
+pub fn read_wav_16k_channels(path: &Path) -> Result<Vec<Vec<f32>>, String> {
     let mut reader = hound::WavReader::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let spec = reader.spec();
 
@@ -120,13 +135,58 @@ pub fn read_wav_16k_mono(path: &Path) -> Result<Vec<f32>, String> {
         }
     };
 
-    let mono = downmix(&interleaved, spec.channels as usize);
-    if spec.sample_rate == TARGET_RATE {
-        return Ok(mono);
+    let count = spec.channels.max(1) as usize;
+    Ok((0..count)
+        .map(|channel| {
+            let samples = interleaved.iter().skip(channel).step_by(count).copied().collect::<Vec<_>>();
+            if spec.sample_rate == TARGET_RATE {
+                return samples;
+            }
+            let mut resampled = Vec::with_capacity(samples.len() / 2);
+            Resampler::new(spec.sample_rate).process(&samples, &mut resampled);
+            resampled
+        })
+        .collect())
+}
+
+/// Signals the tests of several modules share.
+#[cfg(test)]
+pub(crate) mod test_signals {
+    use super::TARGET_RATE;
+
+    const RATE: usize = TARGET_RATE as usize;
+
+    /// Small deterministic noise source, so the tests need no dependency and never flake.
+    pub struct Noise(pub u64);
+
+    impl Noise {
+        pub fn next(&mut self) -> f32 {
+            self.0 = self.0.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1_442_695_040_888_963_407);
+            ((self.0 >> 33) as f32 / (1u64 << 31) as f32) * 2.0 - 1.0
+        }
     }
-    let mut resampled = Vec::with_capacity(mono.len() / 2);
-    Resampler::new(spec.sample_rate).process(&mono, &mut resampled);
-    Ok(resampled)
+
+    /// Something shaped like talking: syllables of noise that swell and fade, with short
+    /// gaps, only inside the given `(from, to)` stretches of seconds.
+    pub fn talk(seconds: usize, turns: &[(f32, f32)], level: f32, seed: u64) -> Vec<f32> {
+        let mut noise = Noise(seed);
+        let mut samples = vec![0.0; seconds * RATE];
+        for (from, to) in turns {
+            let mut at = (from * RATE as f32) as usize;
+            let end = ((to * RATE as f32) as usize).min(samples.len());
+            while at < end {
+                let syllable = (0.12 + 0.2 * noise.next().abs()) * RATE as f32;
+                let loudness = level * (0.4 + 0.6 * noise.next().abs());
+                let length = (syllable as usize).min(end - at);
+                for i in 0..length {
+                    let shape = (std::f32::consts::PI * i as f32 / length as f32).sin();
+                    samples[at + i] = loudness * shape * noise.next();
+                }
+                at += length + (0.05 * RATE as f32) as usize;
+            }
+        }
+        samples
+    }
 }
 
 #[cfg(test)]
@@ -201,5 +261,29 @@ mod tests {
 
         assert!((samples.len() as i64 - 16_000).abs() <= 2);
         assert!((rms(&samples[1_000..]) - 0.345).abs() < 0.03);
+    }
+
+    #[test]
+    fn channels_are_kept_apart_when_asked() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("call.wav");
+        let spec = hound::WavSpec {
+            channels: 2,
+            sample_rate: TARGET_RATE,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut writer = hound::WavWriter::create(&path, spec).unwrap();
+        for _ in 0..1_000 {
+            writer.write_sample(8_192i16).unwrap();
+            writer.write_sample(-16_384i16).unwrap();
+        }
+        writer.finalize().unwrap();
+
+        let channels = read_wav_16k_channels(&path).unwrap();
+
+        assert_eq!(channels.len(), 2);
+        assert!(channels[0].iter().all(|sample| *sample == 0.25));
+        assert!(channels[1].iter().all(|sample| *sample == -0.5));
     }
 }

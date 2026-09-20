@@ -13,6 +13,8 @@ const MEETING_UPDATED: &str = "meeting-updated";
 const RECORDING_LEVEL: &str = "recording-level";
 /// Carries the running recording, or nothing once it stops, to both windows.
 const RECORDING_CHANGED: &str = "recording-changed";
+/// Something the user should read that is not tied to one meeting.
+const NOTICE: &str = "notice";
 
 const MAIN: &str = "main";
 const MINI: &str = "mini";
@@ -55,15 +57,22 @@ fn start_recording(app: AppHandle, state: State<'_, App>) -> Result<Meeting, Str
         return Err("A recording is already running.".to_string());
     }
 
-    let template = state.store().settings().default_template;
-    let meeting = state.store().create_meeting(chrono::Local::now(), &template)?;
+    let settings = state.store().settings();
+    let meeting = state.store().create_meeting(chrono::Local::now(), &settings.default_template)?;
     let levels = app.clone();
-    let recording = Recording::start(state.store().audio_path(&meeting.id), move |level| {
-        let _ = levels.emit(RECORDING_LEVEL, level);
-    });
+    let recording = Recording::start(
+        state.store().audio_path(&meeting.id),
+        settings.record_system_audio,
+        move |level| {
+            let _ = levels.emit(RECORDING_LEVEL, level);
+        },
+    );
 
     match recording {
         Ok(recording) => {
+            if let Some(problem) = recording.system_audio_problem() {
+                let _ = app.emit(NOTICE, format!("Recording the microphone only. {problem}"));
+            }
             *active = Some(Active {
                 meeting_id: meeting.id.clone(),
                 recording,
@@ -251,6 +260,16 @@ async fn send_test_email(settings: Settings) -> Result<(), String> {
     engine::email::send_test(&settings.email).await
 }
 
+/// Where macOS lists the apps allowed to record the computer's sound.
+#[tauri::command]
+fn open_system_audio_settings() -> Result<(), String> {
+    std::process::Command::new("open")
+        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture")
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| e.to_string())
+}
+
 /// Each page calls this once its script has run to the end, so a page that failed to start
 /// shows up as a missing line in the log.
 #[tauri::command]
@@ -380,6 +399,7 @@ fn main() {
             ui_ready,
             send_minutes,
             send_test_email,
+            open_system_audio_settings,
         ])
         .run(tauri::generate_context!())
         .expect("ZillaNote could not start");
