@@ -132,14 +132,20 @@ pub async fn send(settings: &EmailSettings, message: Message) -> Result<(), Stri
         .timeout(Some(Duration::from_secs(30)))
         .build();
 
-    transport.send(message).await.map(|_| ()).map_err(|error| {
-        let detail = error.to_string();
-        if detail.contains("535") || detail.to_lowercase().contains("auth") {
-            format!("{} did not accept the address or password. {} ({detail})", server.host, advice(&server.host))
-        } else {
-            format!("Could not send through {}:{}: {detail}", server.host, server.port)
-        }
-    })
+    transport.send(message).await.map(|_| ()).map_err(|error| explain(&server, &error.to_string()))
+}
+
+/// A refused login gets advice; anything else is passed on as it came. Servers refuse a
+/// login with 535, and Gmail with 534 when it wants an app password.
+fn explain(server: &Server, detail: &str) -> String {
+    let lower = detail.to_lowercase();
+    let refused = ["(534)", "(535)"].iter().any(|code| detail.contains(code))
+        || ["authentication", "password", "credentials"].iter().any(|word| lower.contains(word));
+    if refused {
+        format!("{} did not accept the address or password. {} ({detail})", server.host, advice(&server.host))
+    } else {
+        format!("Could not send through {}:{}: {detail}", server.host, server.port)
+    }
 }
 
 /// Google shows an app password as four groups of four letters, and that is how it gets
@@ -201,6 +207,25 @@ mod tests {
         assert_eq!(server("me@corp.example", "mail.corp.example").unwrap().port, 465);
         assert!(server("me@corp.example", "").unwrap_err().contains("corp.example"));
         assert!(server("me@corp.example", "host:abc").is_err());
+    }
+
+    #[test]
+    fn a_refused_login_comes_with_advice_and_other_failures_as_they_are() {
+        let gmail = Server { host: "smtp.gmail.com".into(), port: 465 };
+        // What Gmail answers to the Google password of an account with 2-Step Verification.
+        let wants_app_password = "permanent error (534): 5.7.9 Application-specific password required. \
+                                  For more information, go to https://support.google.com/mail/?p=InvalidSecondFactor";
+
+        let refused = explain(&gmail, wants_app_password);
+        assert!(refused.contains("did not accept") && refused.contains("myaccount.google.com/apppasswords"), "{refused}");
+        assert!(refused.contains("(534)"), "the server's own words stay in: {refused}");
+        assert!(explain(&gmail, "permanent error (535): 5.7.8 Username and Password not accepted").contains("app password"));
+
+        let untrusted = explain(&gmail, "Connection error: invalid peer certificate: unknown certificate authority");
+        assert!(untrusted.starts_with("Could not send through"), "not a matter of passwords: {untrusted}");
+
+        let unreachable = explain(&gmail, "Connection error: timed out");
+        assert_eq!(unreachable, "Could not send through smtp.gmail.com:465: Connection error: timed out");
     }
 
     #[test]
