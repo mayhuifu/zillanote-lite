@@ -96,6 +96,12 @@ The `.app` and `.dmg` land in `target/release/bundle/` (20 MB installer, 45 MB i
 `cargo clean` gives the build folder back whenever disk space matters; a full rebuild takes
 about a minute.
 
+The bundle is signed ad hoc (`signingIdentity: "-"`), not with an Apple Developer ID. A Mac
+that downloaded the installer therefore refuses the first start: open **System Settings →
+Privacy & Security**, find "ZillaNote was blocked", and press **Open Anyway**; or run
+`xattr -dr com.apple.quarantine /Applications/ZillaNote.app`. Without the ad hoc signature
+macOS calls a downloaded copy "damaged" and offers nothing but the Trash.
+
 ## Test
 
 ```bash
