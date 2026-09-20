@@ -132,6 +132,15 @@ async function showDetail(id, { keepTab = false } = {}) {
   if (document.activeElement !== $("title")) $("title").value = meeting.title;
   $("detail-meta").textContent = `${when(meeting)} · ${STATUS_LABEL[meeting.status]}`;
 
+  const mail = $("detail-email");
+  mail.hidden = !(meeting.emailed_at || meeting.email_error);
+  mail.classList.toggle("problem", Boolean(meeting.email_error));
+  mail.firstElementChild.textContent = meeting.email_error
+    ? `Email not sent: ${meeting.email_error}`
+    : meeting.emailed_at
+      ? `Emailed to ${meeting.emailed_to} at ${new Date(meeting.emailed_at).toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })}`
+      : "";
+
   $("detail-error").hidden = !meeting.error;
   $("detail-error").textContent = meeting.error || "";
 
@@ -211,6 +220,10 @@ $("rewrite").addEventListener("click", () =>
   call("rewrite_minutes", { id: openId, template: $("template").value }),
 );
 $("reprocess").addEventListener("click", () => call("process_meeting", { id: openId }));
+$("send-email").addEventListener("click", async () => {
+  await call("send_minutes", { id: openId });
+  toast("Sending…");
+});
 $("delete").addEventListener("click", async () => {
   if (!confirm("Delete this meeting, its recording and its minutes?")) return;
   await call("delete_meeting", { id: openId });
@@ -251,9 +264,53 @@ $("open-settings").addEventListener("click", async () => {
   $("default-template").value = settings.default_template;
   $("system-prompt").value = settings.system_prompt;
   $("vocabulary").value = settings.vocabulary.join("\n");
+  $("email-to").value = settings.email.to;
+  $("email-from").value = settings.email.from;
+  $("email-password").value = settings.email.password;
+  $("email-server").value = settings.email.server;
+  showServerField();
   $("settings").dataset.maxChars = settings.max_chars_per_call;
   await showReadiness();
   $("settings").showModal();
+});
+
+// The server is only asked for when the sender's provider is not one the app knows.
+const KNOWN_MAIL = /@(gmail|googlemail|qq|foxmail|163|126|outlook|hotmail|live|msn|icloud|me|mac|yahoo)\.com$/i;
+function showServerField() {
+  const from = $("email-from").value.trim();
+  $("email-server-row").hidden = !($("email-server").value.trim() || (from.includes("@") && !KNOWN_MAIL.test(from)));
+}
+$("email-from").addEventListener("input", showServerField);
+
+function readSettings() {
+  return {
+    llm_base_url: $("llm-url").value.trim(),
+    llm_model: $("llm-model").value.trim(),
+    llm_api_key: $("llm-key").value.trim(),
+    default_template: $("default-template").value,
+    system_prompt: $("system-prompt").value,
+    vocabulary: $("vocabulary").value.split("\n").map((term) => term.trim()).filter(Boolean),
+    max_chars_per_call: Number($("settings").dataset.maxChars) || 24000,
+    email: {
+      to: $("email-to").value.trim(),
+      from: $("email-from").value.trim(),
+      password: $("email-password").value.trim(),
+      server: $("email-server").value.trim(),
+    },
+  };
+}
+
+$("test-email").addEventListener("click", async () => {
+  const button = $("test-email");
+  button.disabled = true;
+  button.textContent = "Sending…";
+  try {
+    await call("send_test_email", { settings: readSettings() });
+    toast(`Test sent to ${$("email-to").value.trim()}`);
+  } finally {
+    button.disabled = false;
+    button.textContent = "Send a test email";
+  }
 });
 
 $("reset-prompt").addEventListener("click", async () => {
@@ -264,17 +321,7 @@ $("collapse").addEventListener("click", () => invoke("show_mini"));
 
 $("settings-form").addEventListener("submit", async (event) => {
   event.preventDefault();
-  await call("save_settings", {
-    settings: {
-      llm_base_url: $("llm-url").value.trim(),
-      llm_model: $("llm-model").value.trim(),
-      llm_api_key: $("llm-key").value.trim(),
-      default_template: $("default-template").value,
-      system_prompt: $("system-prompt").value,
-      vocabulary: $("vocabulary").value.split("\n").map((term) => term.trim()).filter(Boolean),
-      max_chars_per_call: Number($("settings").dataset.maxChars) || 24000,
-    },
-  });
+  await call("save_settings", { settings: readSettings() });
   $("settings").close();
   toast("Settings saved");
   showReadiness();

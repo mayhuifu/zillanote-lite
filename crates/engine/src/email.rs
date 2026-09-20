@@ -1,0 +1,246 @@
+//! Sends the minutes to one fixed address through the user's own mail account.
+
+use std::time::Duration;
+
+use lettre::message::{Mailbox, MultiPart};
+use lettre::transport::smtp::authentication::Credentials;
+use lettre::{AsyncSmtpTransport, AsyncTransport, Message, Tokio1Executor};
+
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(default)]
+pub struct EmailSettings {
+    /// Where every set of minutes goes.
+    pub to: String,
+    /// The account that sends them.
+    pub from: String,
+    /// That account's app password (Gmail, iCloud, Yahoo) or authorization code (QQ, 163).
+    pub password: String,
+    /// `host` or `host:port`. Empty for the providers the app already knows.
+    pub server: String,
+}
+
+impl EmailSettings {
+    /// Minutes are emailed whenever these three are filled in.
+    pub fn is_configured(&self) -> bool {
+        [&self.to, &self.from, &self.password]
+            .iter()
+            .all(|field| !field.trim().is_empty())
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Server {
+    pub host: String,
+    pub port: u16,
+}
+
+const KNOWN_SERVERS: &[(&[&str], &str, u16)] = &[
+    (&["gmail.com", "googlemail.com"], "smtp.gmail.com", 465),
+    (&["qq.com", "foxmail.com"], "smtp.qq.com", 465),
+    (&["163.com"], "smtp.163.com", 465),
+    (&["126.com"], "smtp.126.com", 465),
+    (&["outlook.com", "hotmail.com", "live.com", "msn.com"], "smtp-mail.outlook.com", 587),
+    (&["icloud.com", "me.com", "mac.com"], "smtp.mail.me.com", 587),
+    (&["yahoo.com"], "smtp.mail.yahoo.com", 465),
+];
+
+pub fn server_for(settings: &EmailSettings) -> Result<Server, String> {
+    let custom = settings.server.trim();
+    if !custom.is_empty() {
+        let (host, port) = match custom.rsplit_once(':') {
+            Some((host, port)) => (
+                host,
+                port.parse().map_err(|_| format!("\"{port}\" is not a port number."))?,
+            ),
+            None => (custom, 465),
+        };
+        return Ok(Server { host: host.to_string(), port });
+    }
+
+    let domain = settings.from.trim().rsplit('@').next().unwrap_or_default().to_lowercase();
+    KNOWN_SERVERS
+        .iter()
+        .find(|(domains, _, _)| domains.contains(&domain.as_str()))
+        .map(|(_, host, port)| Server { host: host.to_string(), port: *port })
+        .ok_or_else(|| format!("Enter the outgoing mail (SMTP) server for {domain} in Settings."))
+}
+
+pub fn minutes_message(
+    settings: &EmailSettings,
+    title: &str,
+    when: &str,
+    minutes_markdown: &str,
+) -> Result<Message, String> {
+    let from: Mailbox = format!("ZillaNote <{}>", settings.from.trim())
+        .parse()
+        .map_err(|_| format!("\"{}\" is not an email address.", settings.from.trim()))?;
+    let to: Mailbox = settings
+        .to
+        .trim()
+        .parse()
+        .map_err(|_| format!("\"{}\" is not an email address.", settings.to.trim()))?;
+
+    let plain = format!("{title}\n{when}\n\n{minutes_markdown}\n\n-- \nSent by ZillaNote from this computer.");
+    let html = format!(
+        "<div style=\"font:15px/1.55 -apple-system,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;color:#1f1d1a;max-width:720px\">\
+         <h1 style=\"font-size:20px;margin:0 0 2px\">{}</h1><p style=\"color:#77726b;margin:0 0 18px;font-size:13px\">{}</p>{}\
+         <p style=\"color:#9a958d;font-size:12px;margin-top:28px\">Sent by ZillaNote from this computer.</p></div>",
+        escape(title),
+        escape(when),
+        render_html(minutes_markdown)
+    );
+
+    Message::builder()
+        .from(from)
+        .to(to)
+        .subject(format!("Minutes: {title}"))
+        .multipart(MultiPart::alternative_plain_html(plain, html))
+        .map_err(|e| e.to_string())
+}
+
+/// Markdown to HTML for the mail body. Minutes come from a language model, so any raw HTML
+/// in them is shown as text rather than passed through.
+pub fn render_html(markdown: &str) -> String {
+    use pulldown_cmark::{Event, Options, Parser, html};
+
+    let parser = Parser::new_ext(markdown, Options::ENABLE_TABLES).map(|event| match event {
+        Event::Html(raw) | Event::InlineHtml(raw) => Event::Text(raw),
+        other => other,
+    });
+    let mut out = String::new();
+    html::push_html(&mut out, parser);
+    out.replace("<table>", "<table style=\"border-collapse:collapse\" border=\"1\" cellpadding=\"6\">")
+}
+
+fn escape(text: &str) -> String {
+    text.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")
+}
+
+pub async fn send(settings: &EmailSettings, message: Message) -> Result<(), String> {
+    let server = server_for(settings)?;
+    // 465 is TLS from the first byte; anything else starts plain and upgrades.
+    let builder = if server.port == 465 {
+        AsyncSmtpTransport::<Tokio1Executor>::relay(&server.host)
+    } else {
+        AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&server.host)
+    }
+    .map_err(|e| e.to_string())?;
+
+    let transport = builder
+        .port(server.port)
+        .credentials(Credentials::new(
+            settings.from.trim().to_string(),
+            settings.password.trim().to_string(),
+        ))
+        .timeout(Some(Duration::from_secs(30)))
+        .build();
+
+    transport.send(message).await.map(|_| ()).map_err(|error| {
+        let detail = error.to_string();
+        if detail.contains("535") || detail.to_lowercase().contains("auth") {
+            format!(
+                "{} did not accept the address or password. Gmail, iCloud and Yahoo need an app \
+                 password, QQ and 163 an authorization code, not the login password. ({detail})",
+                server.host
+            )
+        } else {
+            format!("Could not send through {}:{}: {detail}", server.host, server.port)
+        }
+    })
+}
+
+pub async fn send_test(settings: &EmailSettings) -> Result<(), String> {
+    let message = minutes_message(
+        settings,
+        "ZillaNote test",
+        "If you can read this, minutes will arrive here.",
+        "## It works\n\nMinutes are sent to this address as soon as they are written.",
+    )?;
+    send(settings, message).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn settings(from: &str, server: &str) -> EmailSettings {
+        EmailSettings {
+            to: "hui@example.com".to_string(),
+            from: from.to_string(),
+            password: "app-password".to_string(),
+            server: server.to_string(),
+        }
+    }
+
+    #[test]
+    fn the_server_comes_from_the_senders_domain_unless_one_is_given() {
+        let server = |from, custom| server_for(&settings(from, custom));
+
+        assert_eq!(server("me@Gmail.com", "").unwrap(), Server { host: "smtp.gmail.com".into(), port: 465 });
+        assert_eq!(server("me@qq.com", "").unwrap().host, "smtp.qq.com");
+        assert_eq!(server("me@outlook.com", "").unwrap().port, 587);
+        assert_eq!(server("me@corp.example", "mail.corp.example:587").unwrap(), Server { host: "mail.corp.example".into(), port: 587 });
+        assert_eq!(server("me@corp.example", "mail.corp.example").unwrap().port, 465);
+        assert!(server("me@corp.example", "").unwrap_err().contains("corp.example"));
+        assert!(server("me@corp.example", "host:abc").is_err());
+    }
+
+    #[test]
+    fn email_is_on_only_when_recipient_sender_and_password_are_all_set() {
+        assert!(settings("me@qq.com", "").is_configured());
+        assert!(!EmailSettings { password: " ".into(), ..settings("me@qq.com", "") }.is_configured());
+        assert!(!EmailSettings::default().is_configured());
+    }
+
+    #[test]
+    fn the_message_carries_the_minutes_as_text_and_as_html() {
+        let message = minutes_message(
+            &settings("me@qq.com", ""),
+            "周会 <Q3>",
+            "2026-09-20 10:30",
+            "## 决定\n\n| Action | Owner |\n|---|---|\n| Send deck | unassigned |",
+        )
+        .unwrap();
+        let raw = String::from_utf8(message.formatted()).unwrap();
+
+        assert!(raw.contains("To: hui@example.com"));
+        assert!(raw.contains("multipart/alternative"));
+        assert!(raw.contains("text/plain") && raw.contains("text/html"));
+    }
+
+    #[test]
+    fn html_in_the_minutes_is_shown_not_run() {
+        let html = render_html("## Plan\n\n<script>alert(1)</script> and <img src=x onerror=y>\n\n| A | B |\n|---|---|\n| 1 | 2 |");
+
+        assert!(html.contains("<h2>Plan</h2>"));
+        assert!(!html.contains("<script>") && !html.contains("<img"));
+        assert!(html.contains("&lt;script&gt;"));
+        assert!(html.contains("<td>1</td>"));
+    }
+
+    /// Talks to real mail servers with a password that cannot be right, so nothing is ever
+    /// sent: it proves the connection, the encryption and the message a wrong password gets.
+    ///
+    /// cargo test -p engine live_smtp -- --ignored --nocapture
+    #[tokio::test(flavor = "multi_thread")]
+    #[ignore = "needs the network"]
+    async fn live_smtp_rejects_a_wrong_password_with_a_helpful_message() {
+        for from in ["zillanote-test@gmail.com", "zillanote-test@qq.com", "zillanote-test@outlook.com"] {
+            let mut wrong = settings(from, "");
+            wrong.password = "definitely-not-the-password".to_string();
+
+            let error = send_test(&wrong).await.unwrap_err();
+
+            println!("{from}: {error}\n");
+            assert!(error.contains("did not accept the address or password"), "{from}: {error}");
+        }
+    }
+
+    #[test]
+    fn a_bad_address_is_reported_before_anything_is_sent() {
+        let mut bad = settings("me@qq.com", "");
+        bad.to = "not-an-address".to_string();
+
+        assert!(minutes_message(&bad, "T", "now", "x").unwrap_err().contains("not-an-address"));
+    }
+}

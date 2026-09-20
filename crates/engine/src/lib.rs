@@ -2,6 +2,7 @@
 
 pub mod audio;
 pub mod chunker;
+pub mod email;
 pub mod minutes;
 pub mod pipeline;
 pub mod recorder;

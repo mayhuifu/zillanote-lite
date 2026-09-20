@@ -42,6 +42,7 @@
         <button id="reveal" class="icon" title="Show files" aria-label="Show files">📁</button>
       </header>
       <p id="detail-meta" class="meta"></p>
+      <p id="detail-email" class="meta" hidden><span></span> <button id="send-email" class="text link">Send again</button></p>
       <div id="detail-error" class="notice" hidden></div>
       <div id="detail-progress" class="progress" hidden><span></span></div>
 
@@ -80,6 +81,14 @@
           <textarea id="system-prompt" rows="9" spellcheck="false"></textarea>
         </label>
         <button type="button" id="reset-prompt" class="text">Reset to the default prompt</button>
+
+        <h3>Email the minutes</h3>
+        <p class="help">Minutes are sent to this one address as soon as they are written. Leave it empty to send nothing.</p>
+        <label>Send minutes to <input id="email-to" type="email" placeholder="you@example.com" /></label>
+        <label>Send from (your mail account) <input id="email-from" type="email" placeholder="you@gmail.com, you@qq.com, …" /></label>
+        <label>That account's app password <input id="email-password" type="password" autocomplete="off" placeholder="Gmail, iCloud, Yahoo: app password. QQ, 163: authorization code" /></label>
+        <label id="email-server-row" hidden>Outgoing mail server <input id="email-server" type="text" placeholder="smtp.example.com:465" /></label>
+        <button type="button" id="test-email" class="text">Send a test email</button>
 
         <h3>Recognition</h3>
         <label>

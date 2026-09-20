@@ -9,6 +9,7 @@ use qwen3_asr::{
 
 use crate::audio::{TARGET_RATE, read_wav_16k_mono};
 use crate::chunker::{ChunkerConfig, speech_chunks};
+use crate::email;
 use crate::minutes::{LlmConfig, write_minutes};
 use crate::store::{Meeting, Settings, Status, Store};
 use crate::templates::template;
@@ -158,8 +159,49 @@ impl Pipeline {
         // The transcript is the hard part and it is safe: a meeting without minutes is
         // still done, with the reason shown and "write minutes" one click away.
         meeting.has_minutes = self.store.minutes(&meeting.id).is_some();
+        let written = result.is_ok();
         meeting.error = result.err().map(|error| format!("Minutes were not written: {error}"));
+        if written && settings.email.is_configured() {
+            self.send_email(meeting, &settings).await;
+        }
         self.update(meeting, Status::Done, 1.0, on_update);
+    }
+
+    /// Emails the meeting's minutes again, on request.
+    pub async fn email_minutes(&self, id: &str, on_update: &(dyn Fn(&Meeting) + Send + Sync)) {
+        let Ok(mut meeting) = self.store.meeting(id) else {
+            return;
+        };
+        self.send_email(&mut meeting, &self.store.settings()).await;
+        let _ = self.store.save_meeting(&meeting);
+        on_update(&meeting);
+    }
+
+    /// A mail that does not go out never fails the meeting: the minutes are safe on disk,
+    /// and the reason is kept so it can be shown and the mail sent again.
+    async fn send_email(&self, meeting: &mut Meeting, settings: &Settings) {
+        let when = chrono::DateTime::parse_from_rfc3339(&meeting.created_at)
+            .map(|at| at.format("%Y-%m-%d %H:%M").to_string())
+            .unwrap_or_default();
+        let result = match self.store.minutes(&meeting.id) {
+            None => Err("There are no minutes to send yet.".to_string()),
+            Some(minutes) => match email::minutes_message(&settings.email, &meeting.title, &when, &minutes) {
+                Ok(message) => email::send(&settings.email, message).await,
+                Err(error) => Err(error),
+            },
+        };
+
+        match result {
+            Ok(()) => {
+                meeting.emailed_to = Some(settings.email.to.trim().to_string());
+                meeting.emailed_at = Some(chrono::Local::now().to_rfc3339());
+                meeting.email_error = None;
+            }
+            Err(error) => {
+                tracing::warn!(meeting = %meeting.id, %error, "email_failed");
+                meeting.email_error = Some(error);
+            }
+        }
     }
 
     fn update(
@@ -206,6 +248,7 @@ pub struct Readiness {
     pub server_found: bool,
     pub server_location: Option<String>,
     pub llm_configured: bool,
+    pub email_configured: bool,
 }
 
 impl Pipeline {
@@ -224,6 +267,7 @@ impl Pipeline {
             server_location: server.map(|path| path.display().to_string()),
             llm_configured: !settings.llm_base_url.trim().is_empty()
                 && !settings.llm_model.trim().is_empty(),
+            email_configured: settings.email.is_configured(),
         }
     }
 }

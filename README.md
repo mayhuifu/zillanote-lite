@@ -12,6 +12,11 @@ background, on this machine except for the language model you choose.
   meter, record/stop, a progress ring while a meeting is processed. The blue tab at the bottom
   opens the full window; closing that window (or its down-arrow) goes back to the bar. Drag the
   bar by its logo.
+- **Email:** fill in one address in Settings, plus the mail account that sends (its app
+  password, or authorization code for QQ and 163), and every set of minutes is mailed there
+  as soon as it is written. The server is worked out from the sender's address for Gmail,
+  Outlook.com, iCloud, Yahoo, QQ, 163 and 126; any other provider shows a server field. A
+  mail that fails never fails the meeting: the reason is shown with a "Send again" button.
 - **Storage:** plain files, one folder per meeting, under
   `~/Library/Application Support/com.zillanote.lite/meetings/`.
 
@@ -43,6 +48,7 @@ cargo test                                   # unit tests
 node --test ui/tests/*.mjs                   # the Markdown renderer
 ZILLANOTE_TEST_AUDIO=/path/to.wav cargo test -p engine live_pipeline -- --ignored --nocapture
 cargo test -p qwen3-asr --test live -- --ignored --nocapture
+cargo test -p engine live_smtp -- --ignored --nocapture   # real mail servers, wrong password, sends nothing
 ```
 
 ## Layout
@@ -61,4 +67,5 @@ cargo test -p qwen3-asr --test live -- --ignored --nocapture
   microphone only).
 - Speaker labels (diarization) and remembered voices.
 - Downloading the model from inside the app.
-- A menu-bar icon, import of existing recordings, emailing the minutes.
+- A menu-bar icon and import of existing recordings.
+- Keeping the API key and the mail password in the system keychain (today: `settings.json`, readable only by you).

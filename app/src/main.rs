@@ -227,6 +227,30 @@ fn readiness(state: State<'_, App>) -> Readiness {
     state.pipeline.readiness()
 }
 
+/// Sends the meeting's minutes to the fixed address again.
+#[tauri::command]
+fn send_minutes(app: AppHandle, state: State<'_, App>, id: String) -> Result<(), String> {
+    state.store().meeting(&id)?;
+    let pipeline = state.pipeline.clone();
+    tauri::async_runtime::spawn(async move {
+        pipeline
+            .email_minutes(&id, &move |meeting: &Meeting| {
+                let _ = app.emit(MEETING_UPDATED, meeting);
+            })
+            .await;
+    });
+    Ok(())
+}
+
+/// Tries the mail settings as typed, before they are saved.
+#[tauri::command]
+async fn send_test_email(settings: Settings) -> Result<(), String> {
+    if !settings.email.is_configured() {
+        return Err("Fill in the address to send to, the sending account and its password.".to_string());
+    }
+    engine::email::send_test(&settings.email).await
+}
+
 /// Each page calls this once its script has run to the end, so a page that failed to start
 /// shows up as a missing line in the log.
 #[tauri::command]
@@ -354,6 +378,8 @@ fn main() {
             show_main,
             show_mini,
             ui_ready,
+            send_minutes,
+            send_test_email,
         ])
         .run(tauri::generate_context!())
         .expect("ZillaNote could not start");

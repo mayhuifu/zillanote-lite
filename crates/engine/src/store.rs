@@ -11,6 +11,7 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::email::EmailSettings;
 use crate::templates::{DEFAULT_SYSTEM_PROMPT, DEFAULT_TEMPLATE};
 use crate::transcript::Transcript;
 
@@ -47,6 +48,13 @@ pub struct Meeting {
     pub has_transcript: bool,
     #[serde(default)]
     pub has_minutes: bool,
+    /// Where and when the minutes were last emailed, or why that failed.
+    #[serde(default)]
+    pub emailed_to: Option<String>,
+    #[serde(default)]
+    pub emailed_at: Option<String>,
+    #[serde(default)]
+    pub email_error: Option<String>,
 }
 
 fn default_template() -> String {
@@ -64,6 +72,7 @@ pub struct Settings {
     /// Names and terms the recognizer should prefer.
     pub vocabulary: Vec<String>,
     pub max_chars_per_call: usize,
+    pub email: EmailSettings,
 }
 
 impl Default for Settings {
@@ -77,6 +86,7 @@ impl Default for Settings {
             default_template: DEFAULT_TEMPLATE.to_string(),
             vocabulary: Vec::new(),
             max_chars_per_call: 24_000,
+            email: EmailSettings::default(),
         }
     }
 }
@@ -156,6 +166,9 @@ impl Store {
             template: template.to_string(),
             has_transcript: false,
             has_minutes: false,
+            emailed_to: None,
+            emailed_at: None,
+            email_error: None,
         };
         self.save_meeting(&meeting)?;
         Ok(meeting)
