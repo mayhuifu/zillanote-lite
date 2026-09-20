@@ -2,10 +2,13 @@
 //!
 //! ```text
 //! <data dir>/settings.json
+//! <data dir>/voices.json                  the voices the user has named
 //! <data dir>/models/                      Qwen3-ASR weights, if not taken from LM Studio
+//! <data dir>/models/speakers/             the two speaker models
 //! <data dir>/meetings/<id>/meeting.json   title, status, progress
 //!                          audio.wav
 //!                          transcript.json
+//!                          speakers.json  who was heard, and what they sound like
 //!                          minutes.md
 //! ```
 
@@ -14,6 +17,7 @@ use std::path::{Path, PathBuf};
 use crate::email::EmailSettings;
 use crate::templates::{DEFAULT_SYSTEM_PROMPT, DEFAULT_TEMPLATE};
 use crate::transcript::Transcript;
+use crate::voices::{MeetingSpeaker, Voice};
 
 pub const DATA_DIR_ENV: &str = "ZILLANOTE_DATA_DIR";
 const APP_FOLDER: &str = "com.zillanote.lite";
@@ -117,6 +121,10 @@ impl Store {
 
     pub fn models_dir(&self) -> PathBuf {
         self.root.join("models")
+    }
+
+    pub fn speaker_models_dir(&self) -> PathBuf {
+        self.models_dir().join("speakers")
     }
 
     pub fn meeting_dir(&self, id: &str) -> PathBuf {
@@ -229,6 +237,28 @@ impl Store {
     pub fn transcript(&self, id: &str) -> Option<Transcript> {
         let text = std::fs::read_to_string(self.meeting_dir(id).join("transcript.json")).ok()?;
         serde_json::from_str(&text).ok()
+    }
+
+    pub fn save_speakers(&self, id: &str, speakers: &[MeetingSpeaker]) -> Result<(), String> {
+        write_json(&self.meeting_dir(id).join("speakers.json"), &speakers)
+    }
+
+    pub fn speakers(&self, id: &str) -> Vec<MeetingSpeaker> {
+        std::fs::read_to_string(self.meeting_dir(id).join("speakers.json"))
+            .ok()
+            .and_then(|text| serde_json::from_str(&text).ok())
+            .unwrap_or_default()
+    }
+
+    pub fn save_voices(&self, voices: &[Voice]) -> Result<(), String> {
+        write_json(&self.root.join("voices.json"), &voices)
+    }
+
+    pub fn voices(&self) -> Vec<Voice> {
+        std::fs::read_to_string(self.root.join("voices.json"))
+            .ok()
+            .and_then(|text| serde_json::from_str(&text).ok())
+            .unwrap_or_default()
     }
 
     pub fn save_minutes(&self, id: &str, minutes: &str) -> Result<(), String> {

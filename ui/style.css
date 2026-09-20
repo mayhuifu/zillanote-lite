@@ -103,6 +103,15 @@ button.primary { background: var(--brand); color: #fff; border-color: var(--bran
 .actions { display: flex; align-items: center; gap: 6px; padding-top: 10px; border-top: 1px solid var(--line); }
 select, input, textarea { font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
 
+/* --- speakers --- */
+.speakers { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 0 8px; }
+.speaker { font-size: 12px; padding: 3px 10px; border-radius: 99px; border: 1px dashed var(--line); background: none; color: var(--muted); cursor: pointer; }
+.speaker.named { border-style: solid; color: var(--text); }
+.speaker-name { font-size: 12px; padding: 3px 10px; border-radius: 99px; width: 140px; }
+.transcript b { font-weight: 600; }
+.voices { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.voices li { display: flex; align-items: center; justify-content: space-between; font-size: 13px; }
+
 /* --- settings --- */
 dialog { border: none; border-radius: 14px; padding: 0; width: min(560px, calc(100vw - 32px)); max-height: calc(100vh - 32px); background: var(--bg); color: var(--text); box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35); }
 dialog::backdrop { background: rgba(0, 0, 0, 0.35); }

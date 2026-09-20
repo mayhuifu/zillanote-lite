@@ -42,6 +42,40 @@ struct MeetingDetail {
     meeting: Meeting,
     minutes: Option<String>,
     transcript: Option<String>,
+    speakers: Vec<SpeakerView>,
+}
+
+/// A speaker as the window needs it: what the voice sounds like stays in the engine.
+#[derive(serde::Serialize)]
+struct SpeakerView {
+    index: usize,
+    label: String,
+    named: bool,
+    seconds: f64,
+}
+
+#[derive(serde::Serialize)]
+struct VoiceView {
+    id: String,
+    name: String,
+}
+
+fn meeting_detail(store: &Store, id: &str) -> Result<MeetingDetail, String> {
+    Ok(MeetingDetail {
+        meeting: store.meeting(id)?,
+        minutes: store.minutes(id),
+        transcript: store.transcript(id).map(|transcript| transcript.to_text()),
+        speakers: store
+            .speakers(id)
+            .into_iter()
+            .map(|speaker| SpeakerView {
+                index: speaker.index,
+                named: speaker.voice_id.is_some(),
+                label: speaker.label,
+                seconds: speaker.seconds,
+            })
+            .collect(),
+    })
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -140,11 +174,26 @@ fn list_meetings(state: State<'_, App>) -> Vec<Meeting> {
 
 #[tauri::command]
 fn get_meeting(state: State<'_, App>, id: String) -> Result<MeetingDetail, String> {
-    Ok(MeetingDetail {
-        meeting: state.store().meeting(&id)?,
-        minutes: state.store().minutes(&id),
-        transcript: state.store().transcript(&id).map(|transcript| transcript.to_text()),
-    })
+    meeting_detail(state.store(), &id)
+}
+
+/// Names one of the meeting's speakers, and remembers the voice under that name. An empty
+/// name takes the name off again.
+#[tauri::command]
+fn name_speaker(state: State<'_, App>, id: String, index: usize, name: String) -> Result<MeetingDetail, String> {
+    state.pipeline.name_speaker(&id, index, &name)?;
+    meeting_detail(state.store(), &id)
+}
+
+#[tauri::command]
+fn list_voices(state: State<'_, App>) -> Vec<VoiceView> {
+    let voices = state.store().voices().into_iter();
+    voices.map(|voice| VoiceView { id: voice.id, name: voice.name }).collect()
+}
+
+#[tauri::command]
+fn forget_voice(state: State<'_, App>, id: String) -> Result<(), String> {
+    state.pipeline.forget_voice(&id)
 }
 
 #[tauri::command]
@@ -400,6 +449,9 @@ fn main() {
             send_minutes,
             send_test_email,
             open_system_audio_settings,
+            name_speaker,
+            list_voices,
+            forget_voice,
         ])
         .run(tauri::generate_context!())
         .expect("ZillaNote could not start");

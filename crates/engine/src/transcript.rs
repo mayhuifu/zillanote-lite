@@ -3,8 +3,12 @@ pub struct Segment {
     pub start: f64,
     pub end: f64,
     pub text: String,
+    /// The name shown in front of the line.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub speaker: Option<String>,
+    /// Which of the meeting's speakers that is, so the name can change later.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub speaker_index: Option<usize>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
@@ -56,12 +60,14 @@ mod tests {
                     end: 80.0,
                     text: "我们开始。".to_string(),
                     speaker: None,
+                    speaker_index: None,
                 },
                 Segment {
                     start: 3725.0,
                     end: 3730.0,
                     text: "Sounds good.".to_string(),
                     speaker: Some("Speaker 2".to_string()),
+                    speaker_index: Some(1),
                 },
             ],
         };

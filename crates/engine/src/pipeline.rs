@@ -1,5 +1,6 @@
 //! What happens after Stop: transcribe, then write minutes, one model in memory at a time.
 
+use std::cell::RefCell;
 use std::path::PathBuf;
 
 use qwen3_asr::{
@@ -7,16 +8,23 @@ use qwen3_asr::{
     describe_missing_model, find_llama_server, kill_stale_servers,
 };
 
+use speakers::{DiarizationConfig, DiarizeRequest, Diarizer, SpeakerModels};
+
 use crate::audio::{TARGET_RATE, read_wav_16k_channels};
-use crate::chunker::{ChunkerConfig, speech_chunks};
+use crate::chunker::{Chunk, ChunkerConfig, speech_chunks};
 use crate::email;
 use crate::minutes::{LlmConfig, write_minutes};
 use crate::mixdown::recognition_signal;
 use crate::store::{Meeting, Settings, Status, Store};
 use crate::templates::template;
 use crate::transcript::{Segment, Transcript};
+use crate::turns::{Piece, Turn, seconds_by_speaker, split_at_turns};
+use crate::voices::{self, MeetingSpeaker};
 
 pub const MODEL: Qwen3AsrModel = Qwen3AsrModel::Large;
+
+/// How much of the "transcribing" progress bar finding the speakers gets.
+const SPEAKERS_SHARE: f32 = 0.25;
 
 #[derive(Debug, Clone)]
 pub struct Pipeline {
@@ -71,6 +79,10 @@ impl Pipeline {
             return Err("No speech was found in the recording.".to_string());
         }
 
+        // Who spoke when comes first: its models are gone again before the recognizer's load.
+        let (pieces, speakers) = self.find_speakers(meeting, &samples, &chunks, on_update);
+        let share = if speakers.is_empty() { 0.0 } else { SPEAKERS_SHARE };
+
         let settings = self.store.settings();
         let mut server = self.start_server().await?;
         let client = Qwen3AsrClient::new(&server.base_url(), MODEL)
@@ -80,13 +92,14 @@ impl Pipeline {
         let mut segments = Vec::new();
         let mut failures = 0;
         let mut last_error = String::new();
-        for (index, chunk) in chunks.iter().enumerate() {
-            match client.transcribe_samples(&samples[chunk.start..chunk.end]).await {
+        for (index, piece) in pieces.iter().enumerate() {
+            match client.transcribe_samples(&samples[piece.start..piece.end]).await {
                 Ok(text) if !text.trim().is_empty() => segments.push(Segment {
-                    start: chunk.start as f64 / TARGET_RATE as f64,
-                    end: chunk.end as f64 / TARGET_RATE as f64,
+                    start: piece.start as f64 / TARGET_RATE as f64,
+                    end: piece.end as f64 / TARGET_RATE as f64,
                     text: text.trim().to_string(),
-                    speaker: None,
+                    speaker: piece.speaker.and_then(|index| Some(speakers.get(index)?.label.clone())),
+                    speaker_index: piece.speaker,
                 }),
                 Ok(_) => {}
                 Err(error) => {
@@ -98,7 +111,7 @@ impl Pipeline {
             self.update(
                 meeting,
                 Status::Transcribing,
-                (index + 1) as f32 / chunks.len() as f32,
+                share + (1.0 - share) * (index + 1) as f32 / pieces.len() as f32,
                 on_update,
             );
         }
@@ -119,9 +132,138 @@ impl Pipeline {
             return Err("No speech was recognized in the recording.".to_string());
         }
         self.store.save_transcript(&meeting.id, &transcript)?;
+        self.store.save_speakers(&meeting.id, &speakers)?;
         meeting.duration_seconds = duration_seconds;
         meeting.has_transcript = true;
         Ok(())
+    }
+
+    /// Cuts the chunks at the changes of speaker and says who the speakers are, recognizing
+    /// the voices the user has named. Best effort: without the speaker models, or if they
+    /// fail, the chunks come back as they are and the transcript has no names.
+    fn find_speakers(
+        &self,
+        meeting: &Meeting,
+        samples: &[f32],
+        chunks: &[Chunk],
+        on_update: &(dyn Fn(&Meeting) + Send + Sync),
+    ) -> (Vec<Piece>, Vec<MeetingSpeaker>) {
+        let unnamed = || {
+            let pieces = chunks.iter().map(|chunk| Piece {
+                start: chunk.start,
+                end: chunk.end,
+                speaker: None,
+            });
+            (pieces.collect(), Vec::new())
+        };
+        let Some(models) = SpeakerModels::locate(&self.store.speaker_models_dir()) else {
+            return unnamed();
+        };
+
+        let voices = self.store.voices();
+        let known = voices::known_speakers(&voices);
+        let shown = RefCell::new(meeting.clone());
+        let on_progress = |fraction: f32| {
+            let mut shown = shown.borrow_mut();
+            let progress = SPEAKERS_SHARE * fraction;
+            if progress - shown.progress >= 0.01 {
+                shown.progress = progress;
+                let _ = self.store.save_meeting(&shown);
+                on_update(&shown);
+            }
+        };
+        // Minutes of arithmetic: tell the runtime this thread is busy.
+        let result = tokio::task::block_in_place(|| {
+            // Full detail up to forty minutes; longer recordings are looked at in wider steps,
+            // which keeps the wait for a two-hour meeting near that of a one-hour one.
+            let config = DiarizationConfig {
+                max_windows: 1_200,
+                ..DiarizationConfig::default()
+            };
+            let mut diarizer = Diarizer::new(&models, config)?;
+            let request = DiarizeRequest {
+                known_speakers: &known,
+                on_progress: Some(&on_progress),
+                ..DiarizeRequest::default()
+            };
+            let mut audio = samples;
+            diarizer.diarize(&mut audio, &request)
+        });
+        let diarization = match result {
+            Ok(diarization) => diarization,
+            Err(error) => {
+                tracing::warn!(meeting = %meeting.id, %error, "speakers_not_found");
+                return unnamed();
+            }
+        };
+
+        let turns = diarization
+            .segments
+            .iter()
+            .map(|segment| Turn {
+                start: segment.start,
+                end: segment.end,
+                speaker: segment.speaker,
+            })
+            .collect::<Vec<_>>();
+        let seconds = seconds_by_speaker(&turns);
+        let speakers = diarization
+            .speakers
+            .into_iter()
+            .map(|speaker| {
+                let voice = speaker
+                    .identity
+                    .and_then(|identity| voices.iter().find(|voice| voice.id == identity.id));
+                MeetingSpeaker {
+                    index: speaker.index,
+                    label: voice.map_or_else(|| voices::default_label(speaker.index), |voice| voice.name.clone()),
+                    voice_id: voice.map(|voice| voice.id.clone()),
+                    seconds: seconds.get(speaker.index).copied().unwrap_or(0.0),
+                    centroid: speaker.centroid,
+                }
+            })
+            .collect::<Vec<_>>();
+        tracing::info!(meeting = %meeting.id, speakers = speakers.len(), turns = turns.len(), "speakers_found");
+
+        (split_at_turns(chunks, &turns, samples, TARGET_RATE), speakers)
+    }
+
+    /// Puts a name to one of a meeting's speakers and remembers the voice under it; an
+    /// empty name takes the name off again. The transcript's lines follow.
+    pub fn name_speaker(&self, id: &str, index: usize, name: &str) -> Result<(), String> {
+        let mut speakers = self.store.speakers(id);
+        let speaker = speakers
+            .iter_mut()
+            .find(|speaker| speaker.index == index)
+            .ok_or_else(|| "This meeting has no such speaker.".to_string())?;
+        let mut voices = self.store.voices();
+        if name.trim().is_empty() {
+            voices::unname_speaker(&mut voices, speaker);
+        } else {
+            voices::name_speaker(&mut voices, speaker, name, || {
+                format!("voice-{}", chrono::Local::now().timestamp_millis())
+            });
+        }
+        let label = speaker.label.clone();
+
+        self.store.save_voices(&voices)?;
+        self.store.save_speakers(id, &speakers)?;
+        if let Some(mut transcript) = self.store.transcript(id) {
+            for segment in &mut transcript.segments {
+                if segment.speaker_index == Some(index) {
+                    segment.speaker = Some(label.clone());
+                }
+            }
+            self.store.save_transcript(id, &transcript)?;
+        }
+        Ok(())
+    }
+
+    /// Forgets a named voice. Meetings keep the name where it already stands.
+    pub fn forget_voice(&self, voice_id: &str) -> Result<(), String> {
+        let mut voices = self.store.voices();
+        voices.retain(|voice| voice.id != voice_id);
+        self.store.save_voices(&voices)
     }
 
     async fn start_server(&self) -> Result<LlamaServer, String> {
@@ -248,6 +390,8 @@ pub struct Readiness {
     pub model_install_dir: String,
     pub server_found: bool,
     pub server_location: Option<String>,
+    /// Without them the transcript simply has no speaker names.
+    pub speaker_models_found: bool,
     pub llm_configured: bool,
     pub email_configured: bool,
 }
@@ -266,6 +410,7 @@ impl Pipeline {
             model_install_dir: MODEL.install_dir(&models_dir).display().to_string(),
             server_found: server.is_some(),
             server_location: server.map(|path| path.display().to_string()),
+            speaker_models_found: SpeakerModels::locate(&self.store.speaker_models_dir()).is_some(),
             llm_configured: !settings.llm_base_url.trim().is_empty()
                 && !settings.llm_model.trim().is_empty(),
             email_configured: settings.email.is_configured(),
@@ -279,7 +424,9 @@ mod tests {
 
     use super::*;
 
-    /// Needs `llama-server`, the Qwen3-ASR files and a WAV recording on this machine:
+    /// Needs `llama-server`, the Qwen3-ASR files and a WAV recording on this machine. With
+    /// `ZILLANOTE_SPEAKER_MODELS` pointing at the two speaker models, and a recording of two
+    /// or more people, it also checks the speaker names:
     ///
     /// ZILLANOTE_TEST_AUDIO=/path/to.wav cargo test -p engine live_pipeline -- --ignored --nocapture
     #[tokio::test(flavor = "multi_thread")]
@@ -294,6 +441,11 @@ mod tests {
         store.save_settings(&settings).unwrap();
         let meeting = store.create_meeting(chrono::Local::now(), "discussion").unwrap();
         std::fs::copy(&audio, store.audio_path(&meeting.id)).unwrap();
+        let speaker_models = std::env::var("ZILLANOTE_SPEAKER_MODELS").ok();
+        if let Some(models) = &speaker_models {
+            std::fs::create_dir_all(store.models_dir()).unwrap();
+            std::os::unix::fs::symlink(models, store.speaker_models_dir()).unwrap();
+        }
 
         let pipeline = Pipeline {
             store: store.clone(),
@@ -331,5 +483,27 @@ mod tests {
         let last = transcript.segments.last().unwrap();
         assert!(last.end > transcript.duration_seconds * 0.8, "transcript stops at {}", last.end);
         assert!(!transcript.to_text().contains("<asr_text>"));
+
+        if speaker_models.is_none() {
+            assert!(transcript.segments.iter().all(|segment| segment.speaker.is_none()));
+            return;
+        }
+        let speakers = store.speakers(&meeting.id);
+        println!("{:?}", speakers.iter().map(|s| (&s.label, s.seconds as u32)).collect::<Vec<_>>());
+        assert!(speakers.len() >= 2, "{} speaker(s) found", speakers.len());
+        assert!(transcript.to_text().contains("Speaker 1: ") && transcript.to_text().contains("Speaker 2: "));
+
+        // A name given once is on this transcript at once, and on the next one by itself.
+        pipeline.name_speaker(&meeting.id, 1, "Alex").unwrap();
+        let renamed = store.transcript(&meeting.id).unwrap().to_text();
+        assert!(renamed.contains("Alex: ") && !renamed.contains("Speaker 2: "));
+
+        let again = store.create_meeting(chrono::Local::now(), "discussion").unwrap();
+        std::fs::copy(&audio, store.audio_path(&again.id)).unwrap();
+        pipeline.process(&again.id, &|_: &Meeting| {}).await;
+        let recognized = store.speakers(&again.id);
+        println!("{:?}", recognized.iter().map(|s| (&s.label, s.voice_id.is_some())).collect::<Vec<_>>());
+        assert_eq!(recognized.iter().filter(|speaker| speaker.label == "Alex").count(), 1);
+        assert_eq!(store.voices()[0].examples.len(), 1, "recognizing a voice must not add to it");
     }
 }

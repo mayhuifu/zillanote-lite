@@ -1,5 +1,6 @@
 import { BUSY, clock, invoke, listen } from "./common.js";
 import { renderMarkdown, escapeHtml } from "./markdown.js";
+import { renderTranscript } from "./transcript.js";
 
 const $ = (id) => document.getElementById(id);
 
@@ -16,6 +17,7 @@ let openId = null;
 let activeTab = "minutes";
 let recording = null; // { meetingId, startedAt }
 let templates = [];
+let speakerLabels = [];
 
 // --- helpers ---
 
@@ -150,11 +152,13 @@ async function showDetail(id, { keepTab = false } = {}) {
   bar.classList.toggle("indeterminate", meeting.status === "summarizing");
   bar.firstElementChild.style.width = `${Math.round((meeting.progress || 0) * 100)}%`;
 
+  speakerLabels = detail.speakers.map((speaker) => speaker.label);
+  renderSpeakers(detail.speakers);
   $("minutes").innerHTML = detail.minutes
     ? renderMarkdown(detail.minutes)
     : `<p class="placeholder">${busy ? "Working on it…" : "No minutes yet."}</p>`;
   $("transcript").innerHTML = detail.transcript
-    ? renderTranscript(detail.transcript)
+    ? renderTranscript(detail.transcript, speakerLabels)
     : `<p class="placeholder">${busy ? "Working on it…" : "No transcript yet."}</p>`;
   $("minutes").dataset.source = detail.minutes || "";
   $("transcript").dataset.source = detail.transcript || "";
@@ -167,17 +171,46 @@ async function showDetail(id, { keepTab = false } = {}) {
   renderTabs();
 }
 
-function renderTranscript(text) {
-  return text
-    .split("\n")
-    .filter((line) => line.trim())
-    .map((line) => {
-      const match = line.match(/^\[([\d:]+)\]\s*(.*)$/);
-      return match
-        ? `<p><time>${match[1]}</time>${escapeHtml(match[2])}</p>`
-        : `<p>${escapeHtml(line)}</p>`;
-    })
-    .join("");
+// One chip per speaker. Clicking one turns it into a field for the person's name.
+function renderSpeakers(speakers) {
+  const strip = $("speakers");
+  strip.innerHTML = "";
+  for (const speaker of speakers) {
+    const chip = document.createElement("button");
+    chip.className = `speaker ${speaker.named ? "named" : ""}`;
+    chip.title = speaker.named ? "Change the name" : "Name this speaker, and ZillaNote knows the voice next time";
+    chip.textContent = `${speaker.label} · ${clock(speaker.seconds)}`;
+    chip.addEventListener("click", () => editSpeaker(chip, speaker));
+    strip.appendChild(chip);
+  }
+  strip.dataset.count = speakers.length;
+  renderTabs();
+}
+
+function editSpeaker(chip, speaker) {
+  const field = document.createElement("input");
+  field.className = "speaker-name";
+  field.placeholder = "Who is this?";
+  field.value = speaker.named ? speaker.label : "";
+  chip.replaceWith(field);
+  field.focus();
+
+  let settled = false;
+  const settle = async (save) => {
+    if (settled) return;
+    settled = true;
+    const name = field.value.trim();
+    if (save && name !== (speaker.named ? speaker.label : "")) {
+      await call("name_speaker", { id: openId, index: speaker.index, name });
+      toast(name ? `${name} it is. Rewrite the minutes to use the name there too.` : "Name removed");
+    }
+    showDetail(openId, { keepTab: true });
+  };
+  field.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") settle(true);
+    if (event.key === "Escape") settle(false);
+  });
+  field.addEventListener("blur", () => settle(true));
 }
 
 function renderTabs() {
@@ -186,6 +219,7 @@ function renderTabs() {
   }
   $("minutes").hidden = activeTab !== "minutes";
   $("transcript").hidden = activeTab !== "transcript";
+  $("speakers").hidden = activeTab !== "transcript" || !Number($("speakers").dataset.count);
 }
 
 for (const tab of document.querySelectorAll(".tab")) {
@@ -253,7 +287,28 @@ async function showReadiness() {
   $("readiness").textContent = [
     `Speech model: ${ready.model_found ? ready.model_location : "not found"}`,
     `Speech engine: ${ready.server_found ? ready.server_location : "not found"}`,
+    `Speaker names: ${ready.speaker_models_found ? "on" : "off, the speaker models are not installed"}`,
   ].join("\n");
+}
+
+async function showVoices() {
+  const voices = await call("list_voices");
+  const list = $("voices");
+  list.innerHTML = voices.length ? "" : `<li class="help">None yet.</li>`;
+  for (const voice of voices) {
+    const item = document.createElement("li");
+    item.innerHTML = `<span>${escapeHtml(voice.name)}</span>`;
+    const forget = document.createElement("button");
+    forget.type = "button";
+    forget.className = "text danger";
+    forget.textContent = "Forget";
+    forget.addEventListener("click", async () => {
+      await call("forget_voice", { id: voice.id });
+      showVoices();
+    });
+    item.appendChild(forget);
+    list.appendChild(item);
+  }
 }
 
 $("open-settings").addEventListener("click", async () => {
@@ -272,6 +327,7 @@ $("open-settings").addEventListener("click", async () => {
   showServerField();
   $("settings").dataset.maxChars = settings.max_chars_per_call;
   await showReadiness();
+  await showVoices();
   $("settings").showModal();
 });
 

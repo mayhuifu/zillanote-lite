@@ -1,4 +1,5 @@
 target/
+vendor/
 app/resources/llama-server/*
 !app/resources/llama-server/README.md
 app/gen/

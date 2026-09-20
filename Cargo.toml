@@ -1,10 +1,11 @@
 [workspace]
 resolver = "2"
-members = ["crates/qwen3-asr", "crates/engine", "app"]
+members = ["crates/qwen3-asr", "crates/speakers", "crates/engine", "app"]
 
 [workspace.dependencies]
 qwen3-asr = { path = "crates/qwen3-asr" }
 engine = { path = "crates/engine" }
+speakers = { path = "crates/speakers" }
 
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
 cpal = "0.17"
@@ -24,6 +25,9 @@ tokio = "1"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 wiremock = "0.6"
+
+# Linked statically against vendor/onnxruntime (scripts/fetch-onnxruntime.mjs).
+ort = { version = "=2.0.0-rc.10", default-features = false, features = ["std"] }
 
 # macOS only, for the system audio tap. cpal already brings all of these in.
 objc2 = "0.6"

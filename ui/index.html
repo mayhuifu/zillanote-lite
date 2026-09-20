@@ -52,6 +52,7 @@
         <span class="spacer"></span>
         <button id="copy" class="text">Copy</button>
       </nav>
+      <div id="speakers" class="speakers" hidden></div>
       <article id="minutes" class="document"></article>
       <article id="transcript" class="document transcript" hidden></article>
 
@@ -93,6 +94,10 @@
         <h3>Recording</h3>
         <label class="check"><input id="system-audio" type="checkbox" /> Record the computer's sound too, so the other side of a Teams or Zoom call is in the transcript</label>
         <p class="help">macOS asks for permission the first time. If the other side is missing from a transcript, allow ZillaNote under Privacy &amp; Security → Screen &amp; System Audio Recording → System Audio Recording Only. <button type="button" id="open-system-audio" class="text link">Open that page</button></p>
+
+        <h3>Remembered voices</h3>
+        <p class="help">Name a speaker in a meeting's transcript, and ZillaNote knows the voice in later meetings.</p>
+        <ul id="voices" class="voices"></ul>
 
         <h3>Recognition</h3>
         <label>
