@@ -1,0 +1,5 @@
+target/
+app/resources/llama-server/*
+!app/resources/llama-server/README.md
+app/gen/
+.DS_Store
