@@ -611,6 +611,18 @@ mod tests {
             std::fs::create_dir_all(store.models_dir()).unwrap();
             std::os::unix::fs::symlink(models, store.speaker_models_dir()).unwrap();
         }
+        // Another speech model than the default: ZILLANOTE_TEST_ASR_MODEL=qwen3-asr-0.6b, with
+        // ZILLANOTE_TEST_MODELS naming a models folder that holds it (as the app's own does).
+        if let Ok(model) = std::env::var("ZILLANOTE_TEST_ASR_MODEL") {
+            let mut settings = store.settings();
+            settings.asr_model = model.parse().expect("a model id");
+            store.save_settings(&settings).unwrap();
+        }
+        if let Ok(models) = std::env::var("ZILLANOTE_TEST_MODELS") {
+            std::fs::create_dir_all(store.models_dir()).unwrap();
+            let link = store.models_dir().join("qwen3-asr");
+            std::os::unix::fs::symlink(std::path::Path::new(&models).join("qwen3-asr"), link).unwrap();
+        }
 
         let pipeline = Pipeline {
             store: store.clone(),
@@ -649,6 +661,10 @@ mod tests {
         assert!(last.end > transcript.duration_seconds * 0.8, "transcript stops at {}", last.end);
         assert!(!transcript.to_text().contains("<asr_text>"));
 
+        // For setting one model's transcript next to another's.
+        if let Ok(out) = std::env::var("ZILLANOTE_TEST_OUT") {
+            std::fs::write(out, transcript.to_text()).unwrap();
+        }
         if speaker_models.is_none() {
             assert!(transcript.segments.iter().all(|segment| segment.speaker.is_none()));
             return;

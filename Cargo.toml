@@ -15,7 +15,10 @@ libc = "0.2"
 lettre = { version = "0.11", default-features = false, features = ["builder", "smtp-transport", "tokio1-rustls", "aws-lc-rs", "webpki-roots", "hostname"] }
 pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
 security-framework = "3"
-reqwest = { version = "0.13", default-features = false, features = ["rustls", "system-proxy"] }
+# The system's own TLS, as curl and Safari use it. rustls now opens with a post-quantum key
+# share that makes its first packet too big for some proxies, which drop the handshake: behind
+# one, Hugging Face could not be reached at all while every direct site worked.
+reqwest = { version = "0.13", default-features = false, features = ["native-tls", "system-proxy"] }
 serde = "1"
 sha2 = "0.10"
 serde_json = "1"

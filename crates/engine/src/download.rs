@@ -342,12 +342,17 @@ async fn stopped(cancel: &AtomicBool) {
 }
 
 fn describe(error: reqwest::Error) -> String {
-    if error.is_connect() {
-        "no connection to the server".to_string()
-    } else if error.is_timeout() {
+    // The error says "error sending request"; what went wrong is at the end of its chain.
+    let mut cause: &dyn std::error::Error = &error;
+    while let Some(next) = cause.source() {
+        cause = next;
+    }
+    if error.is_timeout() {
         "the server stopped answering".to_string()
+    } else if error.is_connect() {
+        format!("no connection to the server ({cause})")
     } else {
-        error.to_string()
+        format!("{error} ({cause})")
     }
 }
 
@@ -619,5 +624,28 @@ mod tests {
 
         println!("{} bytes in {:?}", total_bytes(&packages), started.elapsed());
         assert!(speakers::SpeakerModels::locate(dir.path()).is_some());
+    }
+
+    /// Fetches what is missing of one speech model into a folder and holds it to its pins
+    /// (hundreds of megabytes to gigabytes):
+    ///
+    /// ZILLANOTE_FETCH_MODEL=qwen3-asr-0.6b-q4 ZILLANOTE_FETCH_DIR=/tmp/models \
+    ///   cargo test -p engine live_fetch -- --ignored --nocapture
+    #[tokio::test]
+    #[ignore = "needs the network, downloads a whole speech model"]
+    async fn live_fetch_of_a_speech_model_matches_its_pins() {
+        let model: Qwen3AsrModel = std::env::var("ZILLANOTE_FETCH_MODEL").expect("ZILLANOTE_FETCH_MODEL").parse().unwrap();
+        let dir = PathBuf::from(std::env::var("ZILLANOTE_FETCH_DIR").expect("ZILLANOTE_FETCH_DIR"));
+        let packages = vec![Package {
+            dir: model.install_dir(&dir),
+            files: model.missing_downloads(&dir).into_iter().map(as_download).collect(),
+        }];
+        let started = std::time::Instant::now();
+
+        download(&packages, Retry::default(), &AtomicBool::new(false), &|_| {}).await.unwrap();
+
+        let seconds = started.elapsed().as_secs_f64();
+        println!("{model}: {} bytes in {seconds:.0} s ({:.1} MB/s)", total_bytes(&packages), total_bytes(&packages) as f64 / seconds / 1e6);
+        assert!(model.locate_files(&dir).is_some());
     }
 }
