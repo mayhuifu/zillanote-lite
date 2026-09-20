@@ -45,7 +45,7 @@ Template. Unless the request changes it, the minutes have exactly this shape. Th
 - An action nobody clearly took on, without brackets.
 
 ## AI suggestions
-The key issues that were raised in the meeting and left without a conclusion or a plan, so that the reader can follow them up. Give each a bold name and one sentence on what is open. Only issues from the transcript: this is not advice from outside it. Leave this section out if there are none.";
+One opening sentence saying that these are the key issues that were raised in the meeting and left without a clear conclusion or plan, for the reader to follow up. Then each issue as a bold name followed by one sentence on what is open; issues that belong together go under one bold name as sub-bullets, each starting with its own short name and a colon. Only issues from the transcript: this is not advice from outside it. Leave this section out if there are none.";
 
 pub static DEFAULT_SYSTEM_PROMPT: std::sync::LazyLock<String> =
     std::sync::LazyLock::new(|| format!("{RULES}\n\n{TEMPLATE_SECTION}"));
@@ -168,6 +168,18 @@ mod tests {
         let own_shape = "Be brief.\n\n## 结论\n## 待办";
         assert_eq!(effective_system_prompt(own_shape), own_shape);
         assert_eq!(effective_system_prompt(&DEFAULT_SYSTEM_PROMPT), *DEFAULT_SYSTEM_PROMPT);
+    }
+
+    /// `docs/default-system-prompt.md` is for reading and copying without opening the source.
+    /// Regenerate it with: ZILLANOTE_WRITE_PROMPT_DOC=1 cargo test -p engine the_prompt_in_docs
+    #[test]
+    fn the_prompt_in_docs_is_the_prompt_in_the_app() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/default-system-prompt.md");
+        if std::env::var_os("ZILLANOTE_WRITE_PROMPT_DOC").is_some() {
+            std::fs::write(&path, format!("{}\n", DEFAULT_SYSTEM_PROMPT.as_str())).unwrap();
+        }
+        let in_docs = std::fs::read_to_string(&path).expect("docs/default-system-prompt.md");
+        assert_eq!(in_docs.trim_end(), DEFAULT_SYSTEM_PROMPT.as_str());
     }
 
     #[test]

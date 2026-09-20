@@ -6,8 +6,9 @@ background, on this machine except for the language model you choose.
 - **Speech to text:** Qwen3-ASR 1.7B through a bundled `llama-server`, started only while a
   recording is being transcribed (about 3.3 GB of memory for that time, none when idle).
 - **Minutes:** any OpenAI-compatible endpoint (LM Studio, Ollama, or a hosted API with a key).
-  The system prompt, editable in Settings, holds the rules and, spelled out, the shape of
-  the minutes: numbered topics with their aspects, decisions, next steps with the owner in
+  The system prompt, editable in Settings (its default is in
+  [`docs/default-system-prompt.md`](docs/default-system-prompt.md)), holds the rules and,
+  spelled out, the shape of the minutes: numbered topics with their aspects, decisions, next steps with the owner in
   brackets, and "AI suggestions" for what was raised and left open. It asks for a synthesis
   on one page, for mis-heard terms and numbers in their written form, and for dates in place
   of "tomorrow". The three templates (discussion flow, business meeting, interview) only say
