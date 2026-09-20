@@ -13,7 +13,10 @@ pub const LLM_API_KEY: &str = "llm_api_key";
 pub const EMAIL_PASSWORD: &str = "email_password";
 
 pub trait SecretStore: Debug + Send + Sync {
-    fn get(&self, name: &str) -> Option<String>;
+    /// `Ok(None)` when there is no such secret; an error when it could not be looked at (the
+    /// user said no to the keychain's question, the keychain is locked). The two must never
+    /// be confused: "could not read" followed by a save would otherwise delete the secret.
+    fn get(&self, name: &str) -> Result<Option<String>, String>;
     /// An empty value removes the secret.
     fn set(&self, name: &str, value: &str) -> Result<(), String>;
 }
@@ -35,15 +38,19 @@ impl Keychain {
 
 #[cfg(target_os = "macos")]
 impl SecretStore for Keychain {
-    fn get(&self, name: &str) -> Option<String> {
-        let mut seen = self.seen.lock().ok()?;
+    fn get(&self, name: &str) -> Result<Option<String>, String> {
+        let mut seen = self.seen.lock().map_err(|e| e.to_string())?;
         if let Some(value) = seen.get(name) {
-            return Some(value.clone());
+            return Ok(Some(value.clone()));
         }
-        let bytes = security_framework::passwords::get_generic_password(Self::SERVICE, name).ok()?;
-        let value = String::from_utf8(bytes).ok()?;
+        let bytes = match security_framework::passwords::get_generic_password(Self::SERVICE, name) {
+            Ok(bytes) => bytes,
+            Err(error) if error.code() == Self::NOT_FOUND => return Ok(None),
+            Err(error) => return Err(format!("The keychain could not be read: {error}")),
+        };
+        let value = String::from_utf8(bytes).map_err(|e| e.to_string())?;
         seen.insert(name.to_string(), value.clone());
-        Some(value)
+        Ok(Some(value))
     }
 
     fn set(&self, name: &str, value: &str) -> Result<(), String> {
@@ -73,16 +80,21 @@ pub fn system() -> Option<std::sync::Arc<dyn SecretStore>> {
     None
 }
 
-/// For tests: secrets in memory, or a store that refuses everything.
+/// For tests: secrets in memory, a store that takes nothing (`broken`), or one that cannot
+/// be looked into (`unreadable`).
 #[derive(Debug, Default)]
 pub struct MemorySecrets {
     pub values: Mutex<HashMap<String, String>>,
     pub broken: bool,
+    pub unreadable: bool,
 }
 
 impl SecretStore for MemorySecrets {
-    fn get(&self, name: &str) -> Option<String> {
-        self.values.lock().ok()?.get(name).cloned()
+    fn get(&self, name: &str) -> Result<Option<String>, String> {
+        if self.unreadable {
+            return Err("denied".to_string());
+        }
+        Ok(self.values.lock().map_err(|e| e.to_string())?.get(name).cloned())
     }
 
     fn set(&self, name: &str, value: &str) -> Result<(), String> {
@@ -114,10 +126,10 @@ mod tests {
         keychain.set(NAME, "first").unwrap();
         keychain.set(NAME, "second").unwrap();
         // A fresh instance has nothing remembered: this read goes to the keychain itself.
-        assert_eq!(Keychain::default().get(NAME).as_deref(), Some("second"));
+        assert_eq!(Keychain::default().get(NAME).unwrap().as_deref(), Some("second"));
 
         keychain.set(NAME, "").unwrap();
-        assert_eq!(Keychain::default().get(NAME), None);
+        assert_eq!(Keychain::default().get(NAME).unwrap(), None);
         // Removing what is not there is not an error.
         Keychain::default().set(NAME, "").unwrap();
     }

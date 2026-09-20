@@ -4,8 +4,8 @@ use std::cell::RefCell;
 use std::path::PathBuf;
 
 use qwen3_asr::{
-    LlamaServer, LlamaServerConfig, Qwen3AsrClient, Qwen3AsrModel, describe_missing_binary,
-    describe_missing_model, find_llama_server, kill_stale_servers,
+    LlamaServer, LlamaServerConfig, Qwen3AsrClient, Qwen3AsrModel, describe_missing_binary, find_llama_server,
+    kill_stale_servers,
 };
 
 use speakers::{DiarizationConfig, DiarizeRequest, Diarizer, SpeakerModels};
@@ -22,6 +22,10 @@ use crate::turns::{Piece, Turn, seconds_by_speaker, split_at_turns};
 use crate::voices::{self, MeetingSpeaker};
 
 pub const MODEL: Qwen3AsrModel = Qwen3AsrModel::Large;
+
+/// How the error of a meeting that waits for the speech model starts. Such meetings are
+/// processed by themselves once the model has been downloaded.
+pub const MODEL_MISSING: &str = "The speech model is not on this Mac yet.";
 
 /// How much of the "transcribing" progress bar finding the speakers gets.
 const SPEAKERS_SHARE: f32 = 0.25;
@@ -90,6 +94,8 @@ impl Pipeline {
         on_update: &(dyn Fn(&Meeting) + Send + Sync),
     ) -> Result<(), String> {
         self.update(meeting, Status::Transcribing, 0.0, on_update);
+        // Before any work: finding the speakers takes minutes, and would be for nothing.
+        let server_config = self.server_config()?;
 
         let audio_path = self.store.audio_path(&meeting.id);
         let samples = tokio::task::spawn_blocking(move || read_wav_16k_channels(&audio_path).map(recognition_signal))
@@ -106,7 +112,7 @@ impl Pipeline {
         let share = if speakers.is_empty() { 0.0 } else { SPEAKERS_SHARE };
 
         let settings = self.store.settings();
-        let mut server = self.start_server().await?;
+        let mut server = self.start_server(server_config).await?;
         let client = Qwen3AsrClient::new(&server.base_url(), MODEL)
             .map_err(|e| e.to_string())?
             .with_vocabulary(&settings.vocabulary);
@@ -288,18 +294,29 @@ impl Pipeline {
         self.store.save_voices(&voices)
     }
 
-    async fn start_server(&self) -> Result<LlamaServer, String> {
-        let models_dir = self.store.models_dir();
-        let files = MODEL
-            .locate_files(&models_dir)
-            .ok_or_else(|| describe_missing_model(&MODEL.install_dir(&models_dir), MODEL.repo()))?;
+    /// What the recognizer needs to start, or what is missing.
+    fn server_config(&self) -> Result<LlamaServerConfig, String> {
+        let files = MODEL.locate_files(&self.store.models_dir()).ok_or_else(|| {
+            format!("{MODEL_MISSING} Download it on the home view: this recording is transcribed as soon as it is here.")
+        })?;
         let binary = find_llama_server(&self.bundled_server_dirs).ok_or_else(describe_missing_binary)?;
+        Ok(LlamaServerConfig::new(binary, files))
+    }
 
+    async fn start_server(&self, config: LlamaServerConfig) -> Result<LlamaServer, String> {
         // A run of the app that crashed leaves its server behind, holding the model in memory.
         let _ = tokio::task::spawn_blocking(kill_stale_servers).await;
-        LlamaServer::start(LlamaServerConfig::new(binary, files))
-            .await
-            .map_err(|e| e.to_string())
+        LlamaServer::start(config).await.map_err(|e| e.to_string())
+    }
+
+    /// The meetings that failed only because the speech model was not there yet.
+    pub fn waiting_for_model(&self) -> Vec<String> {
+        let meetings = self.store.meetings().into_iter();
+        meetings
+            .filter(|meeting| meeting.status == Status::Failed)
+            .filter(|meeting| meeting.error.as_deref().is_some_and(|error| error.starts_with(MODEL_MISSING)))
+            .map(|meeting| meeting.id)
+            .collect()
     }
 
     async fn summarize(&self, meeting: &mut Meeting, on_update: &(dyn Fn(&Meeting) + Send + Sync)) {
@@ -451,6 +468,30 @@ mod tests {
     use std::sync::Mutex;
 
     use super::*;
+
+    #[test]
+    fn only_meetings_that_failed_for_want_of_the_speech_model_wait_for_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path().to_path_buf()).unwrap();
+        let pipeline = Pipeline {
+            store: store.clone(),
+            bundled_server_dirs: Vec::new(),
+        };
+        let at = |hour| chrono::Local::now() - chrono::Duration::hours(hour);
+        let mut waiting = store.create_meeting(at(3), "discussion").unwrap();
+        waiting.status = Status::Failed;
+        waiting.error = Some(format!("{MODEL_MISSING} Download it."));
+        let mut broken = store.create_meeting(at(2), "discussion").unwrap();
+        broken.status = Status::Failed;
+        broken.error = Some("No speech was found in the recording.".to_string());
+        let mut done = store.create_meeting(at(1), "discussion").unwrap();
+        done.status = Status::Done;
+        for meeting in [&waiting, &broken, &done] {
+            store.save_meeting(meeting).unwrap();
+        }
+
+        assert_eq!(pipeline.waiting_for_model(), [waiting.id]);
+    }
 
     #[test]
     fn an_imported_recording_becomes_a_meeting_named_after_the_file() {

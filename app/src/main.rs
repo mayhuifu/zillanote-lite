@@ -386,6 +386,16 @@ fn download_models(app: AppHandle, state: State<'_, App>) -> Result<(), String> 
     }
     shared.cancel.store(false, Ordering::SeqCst);
     let store = state.store().clone();
+    // Known to be running from this moment, not from the first byte: a page that asks in
+    // between must not offer to start it again.
+    let beginning = DownloadStatus {
+        running: true,
+        ..DownloadStatus::default()
+    };
+    if let Ok(mut status) = shared.status.lock() {
+        *status = beginning.clone();
+    }
+    let _ = app.emit(DOWNLOAD_PROGRESS, beginning);
 
     tauri::async_runtime::spawn(async move {
         let packages = download::missing_packages(&store.models_dir(), &store.speaker_models_dir());
@@ -409,6 +419,13 @@ fn download_models(app: AppHandle, state: State<'_, App>) -> Result<(), String> 
 
         let result = download::download(&packages, Retry::default(), &shared.cancel, &on_progress).await;
         let total_bytes = download::total_bytes(&packages);
+        if result.is_ok() {
+            // The recordings that were waiting for the speech model get their turn now.
+            let state = app.state::<App>();
+            for id in state.pipeline.waiting_for_model() {
+                process_in_background(&app, &state, id, None);
+            }
+        }
         let stopped = result.as_ref().is_err_and(|error| error == download::CANCELLED);
         shared.running.store(false, Ordering::SeqCst);
         // Read before publishing, which takes the same lock.
@@ -519,6 +536,8 @@ fn build_tray(app: &AppHandle) -> tauri::Result<MenuItem<tauri::Wry>> {
                     let app = app.clone();
                     tauri::async_runtime::spawn(async move {
                         if let Err(error) = import_recording(app.clone(), None).await {
+                            // The reason is shown in the window, so the window has to be there.
+                            let _ = show_main(app.clone());
                             let _ = app.emit(NOTICE, error);
                         }
                     });

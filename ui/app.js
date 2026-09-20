@@ -134,6 +134,8 @@ function renderList() {
 
 async function showDetail(id, { keepTab = false } = {}) {
   const detail = await call("get_meeting", { id });
+  // A refresh that comes back after the user has left this meeting must not bring it back.
+  if (keepTab && openId !== id) return;
   const { meeting } = detail;
   openId = id;
   if (!keepTab) activeTab = meeting.has_minutes || !meeting.has_transcript ? "minutes" : "transcript";
@@ -183,6 +185,8 @@ async function showDetail(id, { keepTab = false } = {}) {
 // One chip per speaker. Clicking one turns it into a field for the person's name.
 function renderSpeakers(speakers) {
   const strip = $("speakers");
+  // Progress events redraw this view many times a minute; a name being typed stays.
+  if (strip.contains(document.activeElement) && document.activeElement.matches(".speaker-name")) return;
   strip.innerHTML = "";
   for (const speaker of speakers) {
     const chip = document.createElement("button");
@@ -197,6 +201,7 @@ function renderSpeakers(speakers) {
 }
 
 function editSpeaker(chip, speaker) {
+  const id = openId;
   const field = document.createElement("input");
   field.className = "speaker-name";
   field.placeholder = "Who is this?";
@@ -209,11 +214,17 @@ function editSpeaker(chip, speaker) {
     if (settled) return;
     settled = true;
     const name = field.value.trim();
-    if (save && name !== (speaker.named ? speaker.label : "")) {
-      await call("name_speaker", { id: openId, index: speaker.index, name });
-      toast(name ? `${name} it is. Rewrite the minutes to use the name there too.` : "Name removed");
+    try {
+      if (save && name !== (speaker.named ? speaker.label : "")) {
+        await call("name_speaker", { id, index: speaker.index, name });
+        toast(name ? `${name} it is. Rewrite the minutes to use the name there too.` : "Name removed");
+      }
+    } finally {
+      // Whatever happened, the field goes and the chips show what is stored; but only if
+      // this meeting is still the one on screen.
+      field.remove();
+      if (openId === id) showDetail(id, { keepTab: true });
     }
-    showDetail(openId, { keepTab: true });
   };
   field.addEventListener("keydown", (event) => {
     if (event.key === "Enter") settle(true);
@@ -292,7 +303,7 @@ async function showReadiness() {
     ? {
         bytes: ready.download_bytes,
         what: !ready.model_found
-          ? "The speech model is not on this Mac yet. Recordings wait for it."
+          ? "The speech model is not on this Mac yet. Recordings are kept, and transcribed once it is here."
           : "Two small models are needed to tell speakers apart.",
       }
     : null;
@@ -439,7 +450,8 @@ await listen("recording-changed", (event) => {
 });
 await listen("notice", (event) => toast(event.payload));
 await listen("tauri://drag-drop", async (event) => {
-  for (const path of event.payload.paths || []) await importRecording(path);
+  // One file that is no recording does not stop the others; `call` has shown why.
+  for (const path of event.payload.paths || []) await importRecording(path).catch(() => {});
 });
 await listen("download-progress", (event) => {
   // The end of a download changes what is missing; until then only the numbers move.

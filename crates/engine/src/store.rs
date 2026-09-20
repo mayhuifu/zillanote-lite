@@ -152,10 +152,7 @@ impl Store {
     // --- settings ---
 
     pub fn settings(&self) -> Settings {
-        let mut settings: Settings = std::fs::read_to_string(self.root.join("settings.json"))
-            .ok()
-            .and_then(|text| serde_json::from_str(&text).ok())
-            .unwrap_or_default();
+        let mut settings = self.settings_on_disk();
         // A secret still in the file (an older version wrote it, or the keychain refused it)
         // counts; otherwise it is wherever secrets are kept.
         if let Some(secrets) = &self.secrets {
@@ -164,11 +161,22 @@ impl Store {
                 (secrets::EMAIL_PASSWORD, &mut settings.email.password),
             ] {
                 if value.is_empty() {
-                    *value = secrets.get(name).unwrap_or_default();
+                    match secrets.get(name) {
+                        Ok(secret) => *value = secret.unwrap_or_default(),
+                        Err(error) => tracing::warn!(name, %error, "secret_unreadable"),
+                    }
                 }
             }
         }
         settings
+    }
+
+    /// What `settings.json` itself holds, secrets kept elsewhere left out.
+    fn settings_on_disk(&self) -> Settings {
+        std::fs::read_to_string(self.root.join("settings.json"))
+            .ok()
+            .and_then(|text| serde_json::from_str(&text).ok())
+            .unwrap_or_default()
     }
 
     pub fn save_settings(&self, settings: &Settings) -> Result<(), String> {
@@ -179,6 +187,12 @@ impl Store {
                 (secrets::LLM_API_KEY, &mut on_disk.llm_api_key),
                 (secrets::EMAIL_PASSWORD, &mut on_disk.email.password),
             ] {
+                // An empty field only means "remove it" if the secret could have been shown.
+                // When the keychain cannot be read the field is empty for that reason alone,
+                // and what is stored stays as it is.
+                if value.is_empty() && secrets.get(name).is_err() {
+                    continue;
+                }
                 // A secret the keychain will not take stays in the file: never lost.
                 match secrets.set(name, value) {
                     Ok(()) => value.clear(),
@@ -197,8 +211,11 @@ impl Store {
     }
 
     /// Moves secrets an older version left in `settings.json` to where they are kept now.
+    /// With none in the file there is nothing to do, and nothing is touched.
     pub fn migrate_secrets(&self) {
-        if self.secrets.is_some() {
+        let on_disk = self.settings_on_disk();
+        let in_file = !on_disk.llm_api_key.is_empty() || !on_disk.email.password.is_empty();
+        if self.secrets.is_some() && in_file {
             let _ = self.save_settings(&self.settings());
         }
     }
@@ -421,6 +438,25 @@ mod tests {
 
         assert!(!std::fs::read_to_string(dir.path().join("settings.json")).unwrap().contains("sk-secret"));
         assert_eq!(store.settings(), secret_settings());
+    }
+
+    #[test]
+    fn a_keychain_that_cannot_be_read_keeps_what_it_holds() {
+        // The user said no to the keychain's question: the fields come back empty, the app
+        // starts, Settings is saved. None of that may remove what is stored.
+        let (_dir, store) = store();
+        let denied = Arc::new(secrets::MemorySecrets {
+            unreadable: true,
+            ..Default::default()
+        });
+        denied.values.lock().unwrap().insert(secrets::LLM_API_KEY.to_string(), "sk-secret".to_string());
+        let store = store.with_secrets(Some(denied.clone()));
+
+        assert_eq!(store.settings().llm_api_key, "");
+        store.migrate_secrets();
+        store.save_settings(&store.settings()).unwrap();
+
+        assert_eq!(denied.values.lock().unwrap().get(secrets::LLM_API_KEY).unwrap(), "sk-secret");
     }
 
     #[test]

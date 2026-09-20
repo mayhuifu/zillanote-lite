@@ -38,7 +38,8 @@ background, on this machine except for the language model you choose.
   converter). The original is only read.
 - **Secrets:** the installed app keeps the API key and the mail password in the macOS
   keychain, and moves any that an older version left in `settings.json`. If the keychain
-  refuses, the secret stays in the file rather than being lost. Development builds
+  refuses, the secret stays in the file rather than being lost; if it cannot be read (you
+  said no to its question), what it holds is left alone, whatever Settings is saved as. Development builds
   (`cargo run`) keep them in `settings.json`, readable only by you: the keychain ties an item
   to the program's signature, and a development build has a new one every time. Use
   `ZILLANOTE_DATA_DIR` for a development data folder of its own.
@@ -56,7 +57,9 @@ cargo run -p zillanote                  # the app
 The Qwen3-ASR model files are picked up from LM Studio if it already has
 `ggml-org/Qwen3-ASR-1.7B-GGUF`. Otherwise the window offers to download them (2.8 GB),
 together with the speaker models (32 MB): pinned revisions, checked against pinned sizes
-and checksums, and a download that stops continues from where it was. `ZILLANOTE_DATA_DIR`
+and checksums, and a download that stops continues from where it was. A recording made before the
+speech model is there fails at once with that reason, and is transcribed by itself when the
+download ends. `ZILLANOTE_DATA_DIR`
 points the app at another data folder (used by the tests).
 
 ## Build the installer

@@ -120,28 +120,30 @@ pub fn read_wav_16k_channels(path: &Path) -> Result<Vec<Vec<f32>>, String> {
     let mut reader = hound::WavReader::open(path).map_err(|e| format!("{}: {e}", path.display()))?;
     let spec = reader.spec();
 
-    let interleaved = match spec.sample_format {
-        hound::SampleFormat::Float => reader
-            .samples::<f32>()
-            .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| e.to_string())?,
+    // Straight into one vector per channel: a two-hour call is most of a gigabyte, and a
+    // copy of it in between would double what reading it costs.
+    let count = spec.channels.max(1) as usize;
+    let mut channels = vec![Vec::with_capacity(reader.len() as usize / count); count];
+    match spec.sample_format {
+        hound::SampleFormat::Float => {
+            for (index, sample) in reader.samples::<f32>().enumerate() {
+                channels[index % count].push(sample.map_err(|e| e.to_string())?);
+            }
+        }
         hound::SampleFormat::Int => {
             let scale = (1_i64 << (spec.bits_per_sample.max(1) - 1)) as f32;
-            reader
-                .samples::<i32>()
-                .map(|sample| sample.map(|value| value as f32 / scale))
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|e| e.to_string())?
-        }
-    };
-
-    let count = spec.channels.max(1) as usize;
-    Ok((0..count)
-        .map(|channel| {
-            let samples = interleaved.iter().skip(channel).step_by(count).copied().collect::<Vec<_>>();
-            if spec.sample_rate == TARGET_RATE {
-                return samples;
+            for (index, sample) in reader.samples::<i32>().enumerate() {
+                channels[index % count].push(sample.map_err(|e| e.to_string())? as f32 / scale);
             }
+        }
+    }
+    if spec.sample_rate == TARGET_RATE {
+        return Ok(channels);
+    }
+
+    Ok(channels
+        .into_iter()
+        .map(|samples| {
             let mut resampled = Vec::with_capacity(samples.len() / 2);
             Resampler::new(spec.sample_rate).process(&samples, &mut resampled);
             resampled

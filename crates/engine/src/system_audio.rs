@@ -17,14 +17,26 @@ pub struct SystemAudioStream {
 /// that started it.
 pub struct SystemAudio {
     #[cfg(target_os = "macos")]
-    _tap: macos::Tap,
+    tap: macos::Tap,
 }
 
 impl SystemAudio {
     #[cfg(target_os = "macos")]
     pub fn start() -> Result<(Self, SystemAudioStream), String> {
         let (tap, stream) = macos::Tap::start()?;
-        Ok((Self { _tap: tap }, stream))
+        Ok((Self { tap }, stream))
+    }
+
+    /// The rate the tap delivers at right now. It follows the output device, so it changes
+    /// when headphones connect in the middle of a call.
+    #[cfg(target_os = "macos")]
+    pub fn current_rate(&self) -> Option<u32> {
+        self.tap.rate()
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    pub fn current_rate(&self) -> Option<u32> {
+        None
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -149,6 +161,11 @@ mod macos {
                 blocks,
             };
             Ok((tap, stream))
+        }
+
+        pub fn rate(&self) -> Option<u32> {
+            let rate = self.format().ok()?.mSampleRate as u32;
+            (rate > 0).then_some(rate)
         }
 
         fn format(&self) -> Result<AudioStreamBasicDescription, String> {

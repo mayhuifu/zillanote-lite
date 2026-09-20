@@ -149,6 +149,9 @@ async fn fetch_file(
 
     let mut failures = 0;
     loop {
+        if cancel.load(Ordering::SeqCst) {
+            return Err(CANCELLED.to_string());
+        }
         let had = file_len(&part).await.unwrap_or(0);
         match fetch_into(file, &part, cancel, report).await {
             Ok(()) => break,
@@ -160,7 +163,10 @@ async fn fetch_file(
                     return Err(format!("{} could not be downloaded: {error}", file.file_name));
                 }
                 tracing::warn!(file = file.file_name, %error, failures, "download_retry");
-                tokio::time::sleep(retry.pause * failures as u32).await;
+                tokio::select! {
+                    _ = tokio::time::sleep(retry.pause * failures as u32) => {}
+                    _ = stopped(cancel) => return Err(CANCELLED.to_string()),
+                }
             }
         }
     }
@@ -205,7 +211,11 @@ async fn fetch_into(
     if have > 0 {
         request = request.header(reqwest::header::RANGE, format!("bytes={have}-"));
     }
-    let mut response = request.send().await.map_err(describe)?;
+    // Connecting can take half a minute on a bad line; Stop must not wait for it.
+    let mut response = tokio::select! {
+        response = request.send() => response.map_err(describe)?,
+        _ = stopped(cancel) => return Err(CANCELLED.to_string()),
+    };
     if !response.status().is_success() {
         return Err(format!("the server answered {}", response.status()));
     }
@@ -223,11 +233,15 @@ async fn fetch_into(
         .await
         .map_err(|e| format!("{}: {e}", part.display()))?;
     report(have);
-    while let Some(bytes) = response.chunk().await.map_err(describe)? {
-        if cancel.load(Ordering::SeqCst) {
-            output.flush().await.map_err(|e| e.to_string())?;
-            return Err(CANCELLED.to_string());
-        }
+    loop {
+        let bytes = tokio::select! {
+            bytes = response.chunk() => bytes.map_err(describe)?,
+            _ = stopped(cancel) => {
+                output.flush().await.map_err(|e| e.to_string())?;
+                return Err(CANCELLED.to_string());
+            }
+        };
+        let Some(bytes) = bytes else { break };
         output.write_all(&bytes).await.map_err(|e| format!("{}: {e}", part.display()))?;
         have += bytes.len() as u64;
         report(have.min(file.size_bytes));
@@ -241,6 +255,13 @@ async fn fetch_into(
             let _ = tokio::fs::remove_file(part).await;
             Err("the server sent more than the file holds".to_string())
         }
+    }
+}
+
+/// Returns once Stop has been asked for.
+async fn stopped(cancel: &AtomicBool) {
+    while !cancel.load(Ordering::SeqCst) {
+        tokio::time::sleep(Duration::from_millis(100)).await;
     }
 }
 
@@ -418,6 +439,27 @@ mod tests {
 
         assert_eq!(error, CANCELLED);
         assert_eq!(std::fs::read(dir.path().join("weights.gguf.part")).unwrap(), &WEIGHTS[..20]);
+    }
+
+    #[tokio::test]
+    async fn stopping_does_not_wait_for_a_server_that_is_slow_to_answer() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .respond_with(ResponseTemplate::new(200).set_body_bytes(WEIGHTS).set_delay(Duration::from_secs(30)))
+            .mount(&server)
+            .await;
+        let dir = tempfile::tempdir().unwrap();
+        let packages = package(dir.path(), file(&server, crc32fast::hash(WEIGHTS)));
+        let cancel = AtomicBool::new(false);
+        let started = std::time::Instant::now();
+
+        let (result, ()) = tokio::join!(download(&packages, quick(), &cancel, &|_| {}), async {
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            cancel.store(true, Ordering::SeqCst);
+        });
+
+        assert_eq!(result.unwrap_err(), CANCELLED);
+        assert!(started.elapsed() < Duration::from_secs(5), "{:?}", started.elapsed());
     }
 
     #[test]

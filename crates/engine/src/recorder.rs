@@ -17,6 +17,8 @@ use crate::system_audio::SystemAudio;
 const LEVEL_INTERVAL: Duration = Duration::from_millis(100);
 /// How often the WAV header is brought up to date, so a crash loses seconds, not the file.
 const FLUSH_INTERVAL: Duration = Duration::from_secs(5);
+/// How often the computer's sound is asked whether its rate is still the same.
+const RATE_CHECK_INTERVAL: Duration = Duration::from_secs(1);
 
 #[derive(Debug, Clone)]
 pub struct RecordingSummary {
@@ -146,6 +148,7 @@ fn write_frames(
 struct Source {
     blocks: mpsc::Receiver<Vec<f32>>,
     channels: usize,
+    rate: u32,
     resampler: Resampler,
     track: Track,
     resampled: Vec<f32>,
@@ -156,9 +159,19 @@ impl Source {
         Self {
             blocks,
             channels,
+            rate,
             resampler: Resampler::new(rate),
             track: Track::default(),
             resampled: Vec::new(),
+        }
+    }
+
+    /// The source now delivers at another rate: what follows is resampled from that one.
+    fn follow_rate(&mut self, rate: u32) {
+        if rate != self.rate {
+            tracing::info!(from = self.rate, to = rate, "source_rate_changed");
+            self.rate = rate;
+            self.resampler = Resampler::new(rate);
         }
     }
 
@@ -237,6 +250,7 @@ fn record(
     let mut written = 0u64;
     let mut last_level = Instant::now();
     let mut last_flush = Instant::now();
+    let mut last_rate_check = Instant::now();
     let mut peak_level = 0.0f32;
 
     loop {
@@ -256,7 +270,13 @@ fn record(
             }
             Err(mpsc::RecvTimeoutError::Disconnected) => true,
         };
-        if let Some((_, system)) = &mut system {
+        if let Some((capture, system)) = &mut system {
+            if last_rate_check.elapsed() >= RATE_CHECK_INTERVAL {
+                last_rate_check = Instant::now();
+                if let Some(rate) = capture.current_rate() {
+                    system.follow_rate(rate);
+                }
+            }
             peak_level = peak_level.max(system.take(None, now));
         }
 
