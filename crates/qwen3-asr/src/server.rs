@@ -218,8 +218,11 @@ fn common_install_dirs() -> Vec<PathBuf> {
         .collect()
 }
 
-/// Kills servers left behind by a run of the app that could not clean up, and returns how
-/// many were killed. A `llama-server` the user started themselves is never touched.
+/// Kills servers left behind by a run of the app that could not clean up, and this run's
+/// own, and returns how many were killed. A `llama-server` the user started themselves is
+/// never touched, and neither is the server of another copy of the app that is running right
+/// now (the installed app next to a development build): that one is in the middle of
+/// somebody's meeting.
 pub fn kill_stale_servers() -> usize {
     let mut system = sysinfo::System::new();
     // The default refresh leaves command lines out, and the alias is only found there.
@@ -229,12 +232,26 @@ pub fn kill_stale_servers() -> usize {
         sysinfo::ProcessRefreshKind::nothing().with_cmd(sysinfo::UpdateKind::Always),
     );
 
+    let own = std::process::id();
     system
         .processes()
         .values()
         .filter(|process| is_our_server(process.name().to_string_lossy().as_ref(), process.cmd()))
+        .filter(|process| {
+            let parent = process.parent().map(|parent| parent.as_u32());
+            is_stale(parent, own, |pid| system.process(sysinfo::Pid::from_u32(pid)).is_some())
+        })
         .filter(|process| process.kill())
         .count()
+}
+
+/// A server is ours to kill when we started it, or when whoever started it is gone (an
+/// orphan is adopted by process 1).
+fn is_stale(parent: Option<u32>, own: u32, alive: impl Fn(u32) -> bool) -> bool {
+    match parent {
+        None | Some(0 | 1) => true,
+        Some(parent) => parent == own || !alive(parent),
+    }
 }
 
 fn is_our_server(name: &str, cmd: &[std::ffi::OsString]) -> bool {
@@ -261,6 +278,17 @@ pub fn describe_missing_model(models_dir: &Path, repo: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_server_of_another_running_copy_of_the_app_is_left_alone() {
+        let alive = |pid: u32| pid == 500;
+
+        assert!(super::is_stale(Some(42), 42, alive), "our own");
+        assert!(super::is_stale(Some(1), 42, alive), "an orphan");
+        assert!(super::is_stale(None, 42, alive), "no parent known");
+        assert!(super::is_stale(Some(77), 42, alive), "its parent is gone");
+        assert!(!super::is_stale(Some(500), 42, alive), "another copy of the app, running");
+    }
+
     use std::ffi::OsString;
 
     use super::*;

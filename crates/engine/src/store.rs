@@ -2,6 +2,7 @@
 //!
 //! ```text
 //! <data dir>/settings.json
+//! <data dir>/zillanote.log                what the app did, for when something went wrong
 //! <data dir>/voices.json                  the voices the user has named
 //! <data dir>/models/                      Qwen3-ASR weights, if not taken from LM Studio
 //! <data dir>/models/speakers/             the two speaker models
@@ -81,6 +82,8 @@ pub struct Settings {
     pub email: EmailSettings,
     /// Record what the computer plays (the other side of a call) next to the microphone.
     pub record_system_audio: bool,
+    /// Write the minutes as soon as the transcript is ready, without being asked.
+    pub auto_minutes: bool,
 }
 
 impl Default for Settings {
@@ -96,6 +99,7 @@ impl Default for Settings {
             max_chars_per_call: 24_000,
             email: EmailSettings::default(),
             record_system_audio: true,
+            auto_minutes: true,
         }
     }
 }
@@ -135,6 +139,10 @@ impl Store {
 
     pub fn models_dir(&self) -> PathBuf {
         self.root.join("models")
+    }
+
+    pub fn log_path(&self) -> PathBuf {
+        self.root.join("zillanote.log")
     }
 
     pub fn speaker_models_dir(&self) -> PathBuf {
@@ -279,19 +287,28 @@ impl Store {
         std::fs::remove_dir_all(self.meeting_dir(id)).map_err(|e| e.to_string())
     }
 
-    /// Work that was under way when the app last closed cannot still be running.
-    pub fn mark_interrupted(&self) {
+    /// Work that was under way when the app last closed cannot still be running. A meeting
+    /// that was only waiting for its minutes keeps its transcript and is returned, so the
+    /// minutes can be written now; anything earlier has to be processed again.
+    pub fn mark_interrupted(&self) -> Vec<String> {
+        let mut owed_minutes = Vec::new();
         for mut meeting in self.meetings() {
-            if matches!(
-                meeting.status,
-                Status::Recording | Status::Transcribing | Status::Summarizing
-            ) {
-                meeting.status = Status::Failed;
-                meeting.progress = 0.0;
-                meeting.error = Some("The app closed before this finished. Process it again.".to_string());
-                let _ = self.save_meeting(&meeting);
+            match meeting.status {
+                Status::Summarizing if meeting.has_transcript => {
+                    meeting.status = Status::Done;
+                    meeting.error = Some("Minutes were not written: ZillaNote was closed first.".to_string());
+                    owed_minutes.push(meeting.id.clone());
+                }
+                Status::Recording | Status::Transcribing | Status::Summarizing => {
+                    meeting.status = Status::Failed;
+                    meeting.error = Some("The app closed before this finished. Process it again.".to_string());
+                }
+                Status::Done | Status::Failed => continue,
             }
+            meeting.progress = 0.0;
+            let _ = self.save_meeting(&meeting);
         }
+        owed_minutes
     }
 
     pub fn save_transcript(&self, id: &str, transcript: &Transcript) -> Result<(), String> {
@@ -399,6 +416,7 @@ mod tests {
         assert_eq!(settings.llm_model, "m");
         assert_eq!(settings.system_prompt, DEFAULT_SYSTEM_PROMPT);
         assert!(settings.record_system_audio);
+        assert!(settings.auto_minutes);
     }
 
     fn secret_settings() -> Settings {
@@ -481,8 +499,16 @@ mod tests {
         done.status = Status::Done;
         store.save_meeting(&done).unwrap();
         let recording = store.create_meeting(at(10), "discussion").unwrap();
+        let mut transcribed = store.create_meeting(at(11), "business").unwrap();
+        transcribed.status = Status::Summarizing;
+        transcribed.has_transcript = true;
+        store.save_meeting(&transcribed).unwrap();
 
-        store.mark_interrupted();
+        // Only the minutes were cut short there: the transcript stands, the minutes are owed.
+        assert_eq!(store.mark_interrupted(), [transcribed.id.clone()]);
+        let owed = store.meeting(&transcribed.id).unwrap();
+        assert_eq!(owed.status, Status::Done);
+        assert!(owed.error.unwrap().contains("Minutes were not written"));
 
         assert_eq!(store.meeting(&done.id).unwrap().status, Status::Done);
         let interrupted = store.meeting(&recording.id).unwrap();

@@ -7,7 +7,10 @@ background, on this machine except for the language model you choose.
   recording is being transcribed (about 3.3 GB of memory for that time, none when idle).
 - **Minutes:** any OpenAI-compatible endpoint (LM Studio, Ollama, or a hosted API with a key).
   Three templates: discussion flow, business meeting, interview. The system prompt is
-  editable in Settings.
+  editable in Settings. They are written by themselves as soon as the transcript is ready
+  (a switch in Settings turns that off). A call that fails for a passing reason (no
+  connection, no answer in time, a busy server) is tried twice more; minutes cut short by
+  closing the app are written at the next start.
 - **Calls:** the computer's own sound is recorded next to the microphone (a second channel
   in `audio.wav`), so the other side of a Teams or Zoom call is in the transcript. It needs
   macOS 14.2 and the "System Audio Recording" permission, asked for on the first recording;
@@ -22,9 +25,9 @@ background, on this machine except for the language model you choose.
   Recognizing a voice never adds to what is stored about it; only naming does. The two
   models (32 MB) live in `models/speakers/` of the data folder; without them transcripts
   simply have no names.
-- **Window:** it starts as a small bar that floats at the right edge of the screen: logo, level
-  meter, record/stop, a progress ring while a meeting is processed. The blue tab at the bottom
-  opens the full window; closing that window (or its down-arrow) goes back to the bar. Drag the
+- **Window:** it starts as a small bar (38 by 142 points) that floats at the right edge of
+  the screen: logo, level meter, record/stop, a progress ring while a meeting is processed.
+  The clay-coloured tab at the bottom opens the full window; closing that window (or its down-arrow) goes back to the bar. Drag the
   bar by its logo.
 - **Email:** fill in one address in Settings, plus the mail account that sends (its app
   password, or authorization code for QQ and 163), and every set of minutes is mailed there
@@ -49,7 +52,8 @@ background, on this machine except for the language model you choose.
   to the program's signature, and a development build has a new one every time. Use
   `ZILLANOTE_DATA_DIR` for a development data folder of its own.
 - **Storage:** plain files, one folder per meeting, under
-  `~/Library/Application Support/com.zillanote.lite/meetings/`.
+  `~/Library/Application Support/com.zillanote.lite/meetings/`. Next to it, `zillanote.log`
+  says what the app did and when, for the day something did not happen.
 
 ## Run
 

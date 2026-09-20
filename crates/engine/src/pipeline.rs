@@ -54,7 +54,12 @@ impl Pipeline {
             self.fail(&mut meeting, error, on_update);
             return;
         }
-        self.summarize(&mut meeting, on_update).await;
+        // The minutes follow by themselves, unless the user would rather ask for them.
+        if self.store.settings().auto_minutes {
+            self.summarize(&mut meeting, on_update).await;
+        } else {
+            self.update(&mut meeting, Status::Done, 1.0, on_update);
+        }
     }
 
     /// Makes a meeting from a recording made elsewhere, ready for [`Pipeline::process`]. The
@@ -166,6 +171,13 @@ impl Pipeline {
         }
         self.store.save_transcript(&meeting.id, &transcript)?;
         self.store.save_speakers(&meeting.id, &speakers)?;
+        tracing::info!(
+            meeting = %meeting.id,
+            seconds = duration_seconds as u64,
+            segments = transcript.segments.len(),
+            failed_chunks = failures,
+            "transcribed"
+        );
         meeting.duration_seconds = duration_seconds;
         meeting.has_transcript = true;
         Ok(())
@@ -347,6 +359,11 @@ impl Pipeline {
         // still done, with the reason shown and "write minutes" one click away.
         meeting.has_minutes = self.store.minutes(&meeting.id).is_some();
         let written = result.is_ok();
+        // In the log too: the message on the meeting is gone as soon as minutes are tried again.
+        match &result {
+            Ok(()) => tracing::info!(meeting = %meeting.id, template = %meeting.template, "minutes_written"),
+            Err(error) => tracing::warn!(meeting = %meeting.id, %error, "minutes_not_written"),
+        }
         meeting.error = result.err().map(|error| format!("Minutes were not written: {error}"));
         if written && settings.email.is_configured() {
             self.send_email(meeting, &settings).await;

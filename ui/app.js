@@ -371,6 +371,7 @@ $("open-settings").addEventListener("click", async () => {
   $("system-prompt").value = settings.system_prompt;
   $("vocabulary").value = settings.vocabulary.join("\n");
   $("system-audio").checked = settings.record_system_audio;
+  $("auto-minutes").checked = settings.auto_minutes;
   $("email-to").value = settings.email.to;
   $("email-from").value = settings.email.from;
   $("email-password").value = settings.email.password;
@@ -400,6 +401,7 @@ function readSettings() {
     vocabulary: $("vocabulary").value.split("\n").map((term) => term.trim()).filter(Boolean),
     max_chars_per_call: Number($("settings").dataset.maxChars) || 24000,
     record_system_audio: $("system-audio").checked,
+    auto_minutes: $("auto-minutes").checked,
     email: {
       to: $("email-to").value.trim(),
       from: $("email-from").value.trim(),

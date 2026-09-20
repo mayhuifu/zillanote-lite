@@ -693,20 +693,45 @@ fn bundled_server_dirs(app: &AppHandle) -> Vec<PathBuf> {
     dirs
 }
 
+/// What the app did goes to the terminal, if there is one, and to `zillanote.log` in the
+/// data folder: started from the Dock there is no terminal, and "why were there no minutes
+/// at half past three" should still have an answer. The file starts over once it is large.
+fn init_logging() {
+    use tracing_subscriber::fmt::writer::MakeWriterExt;
+
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info"));
+    let file = Store::open_default().ok().and_then(|store| {
+        let path = store.log_path();
+        let large = std::fs::metadata(&path).is_ok_and(|log| log.len() > 2_000_000);
+        std::fs::OpenOptions::new().create(true).append(!large).write(true).truncate(large).open(path).ok()
+    });
+    let builder = tracing_subscriber::fmt().with_env_filter(filter).with_ansi(false).with_timer(LocalTime);
+    match file {
+        Some(file) => builder.with_writer(std::io::stderr.and(Mutex::new(file))).init(),
+        None => builder.init(),
+    }
+}
+
+/// The clock on the wall, which is what "half past three" is measured by.
+struct LocalTime;
+
+impl tracing_subscriber::fmt::time::FormatTime for LocalTime {
+    fn format_time(&self, writer: &mut tracing_subscriber::fmt::format::Writer<'_>) -> std::fmt::Result {
+        write!(writer, "{}", chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f"))
+    }
+}
+
 fn main() {
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
-        )
-        .init();
+    init_logging();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let store = Store::open_default()?;
-            store.mark_interrupted();
+            let owed_minutes = store.mark_interrupted();
             store.migrate_secrets();
+            tracing::info!(version = env!("CARGO_PKG_VERSION"), "started");
             let record_item = build_tray(app.handle())?;
             app.set_menu(build_app_menu(app.handle())?)?;
             app.on_menu_event(|app, event| {
@@ -725,6 +750,15 @@ fn main() {
                 record_item,
             });
             place_mini(app.handle());
+            // Meetings whose minutes were cut short by the last exit get them now.
+            let state = app.state::<App>();
+            if state.store().settings().auto_minutes {
+                for id in owed_minutes {
+                    if let Ok(meeting) = state.store().meeting(&id) {
+                        process_in_background(app.handle(), &state, id, Some(meeting.template));
+                    }
+                }
+            }
             Ok(())
         })
         // Closing the full window goes back to the bar; the app keeps running.

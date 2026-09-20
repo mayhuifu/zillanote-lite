@@ -15,7 +15,7 @@ function render() {
   $("record").setAttribute("aria-label", $("record").title);
   if (!on) {
     $("timer").textContent = "";
-    bars.forEach((el) => (el.style.height = "4px"));
+    bars.forEach((el) => (el.style.height = "3px"));
   }
 }
 
@@ -60,7 +60,7 @@ await listen("recording-level", (event) => {
   const level = Math.min(1, Math.sqrt(event.payload) * 2.2);
   bars.forEach((el, i) => {
     const wobble = 0.75 + Math.random() * 0.5;
-    el.style.height = `${Math.round(4 + 16 * level * WEIGHTS[i] * wobble)}px`;
+    el.style.height = `${Math.round(3 + 10 * level * WEIGHTS[i] * wobble)}px`;
   });
 });
 

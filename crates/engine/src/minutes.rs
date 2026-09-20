@@ -83,14 +83,54 @@ pub async fn write_minutes(
     Ok(minutes)
 }
 
+/// Pauses before the second and third try of a call that failed for a passing reason.
+const RETRY_PAUSES: [Duration; 2] = [Duration::from_secs(5), Duration::from_secs(20)];
+
+/// A call to the model, tried again when it failed for a reason that passes by itself: no
+/// connection, no answer in time, a busy or overloaded server. The minutes are written with
+/// nobody watching, often right after an hour of other work, and one hiccup should not
+/// leave a meeting without them. A wrong key or an unknown model is not tried again.
 async fn chat(config: &LlmConfig, system_prompt: &str, user: &str) -> Result<String, String> {
+    let mut pauses = RETRY_PAUSES.iter();
+    loop {
+        match chat_once(config, system_prompt, user).await {
+            Err(failure) if failure.passing => match pauses.next() {
+                Some(pause) => {
+                    tracing::warn!(error = %failure.message, "minutes_call_retried");
+                    tokio::time::sleep(scaled(*pause)).await;
+                }
+                None => return Err(failure.message),
+            },
+            result => return result.map_err(|failure| failure.message),
+        }
+    }
+}
+
+/// Tests do not wait out the real pauses.
+fn scaled(pause: Duration) -> Duration {
+    if cfg!(test) { pause / 1_000 } else { pause }
+}
+
+struct Failure {
+    message: String,
+    /// Worth another try a little later.
+    passing: bool,
+}
+
+impl Failure {
+    fn lasting(message: String) -> Self {
+        Self { message, passing: false }
+    }
+}
+
+async fn chat_once(config: &LlmConfig, system_prompt: &str, user: &str) -> Result<String, Failure> {
     let url = format!("{}/chat/completions", config.base_url.trim().trim_end_matches('/'));
     let mut client = reqwest::Client::builder().timeout(REQUEST_TIMEOUT);
     if is_loopback(&url) {
         // A system-wide proxy must not get between the app and a model on this machine.
         client = client.no_proxy();
     }
-    let client = client.build().map_err(|e| e.to_string())?;
+    let client = client.build().map_err(|e| Failure::lasting(e.to_string()))?;
 
     let mut request = client.post(&url).json(&serde_json::json!({
         "model": config.model.trim(),
@@ -105,25 +145,34 @@ async fn chat(config: &LlmConfig, system_prompt: &str, user: &str) -> Result<Str
         request = request.bearer_auth(config.api_key.trim());
     }
 
-    let response = request.send().await.map_err(|error| {
-        if error.is_connect() {
+    let response = request.send().await.map_err(|error| Failure {
+        message: if error.is_connect() {
             format!("Could not reach the language model at {url}. Is it running?")
         } else if error.is_timeout() {
             "The language model took too long to answer.".to_string()
         } else {
             format!("Language model request failed: {error}")
-        }
+        },
+        passing: true,
     })?;
 
     let status = response.status();
-    let body = response.text().await.map_err(|e| e.to_string())?;
+    // The connection dropping while the answer comes in passes too.
+    let body = response.text().await.map_err(|error| Failure {
+        message: format!("The language model's answer broke off: {error}"),
+        passing: true,
+    })?;
     if !status.is_success() {
         let detail = body.chars().take(300).collect::<String>();
-        return Err(format!("The language model answered {status}: {detail}"));
+        return Err(Failure {
+            message: format!("The language model answered {status}: {detail}"),
+            // Too many requests, or the server's own trouble. Anything else 4xx is ours.
+            passing: status.as_u16() == 429 || status.is_server_error(),
+        });
     }
 
     let parsed: ChatResponse = serde_json::from_str(&body)
-        .map_err(|_| "The language model's answer was not in the expected format.".to_string())?;
+        .map_err(|_| Failure::lasting("The language model's answer was not in the expected format.".to_string()))?;
     let content = parsed
         .choices
         .into_iter()
@@ -131,7 +180,7 @@ async fn chat(config: &LlmConfig, system_prompt: &str, user: &str) -> Result<Str
         .map(|choice| strip_reasoning(&choice.message.content))
         .unwrap_or_default();
     if content.trim().is_empty() {
-        return Err("The language model returned an empty answer.".to_string());
+        return Err(Failure::lasting("The language model returned an empty answer.".to_string()));
     }
     Ok(content)
 }
@@ -209,6 +258,57 @@ mod tests {
         assert!(is_loopback("http://localhost:1234/v1/chat/completions"));
         assert!(is_loopback("http://127.0.0.1:8080/v1"));
         assert!(!is_loopback("https://api.openai.com/v1"));
+    }
+
+    fn config_for(server: &wiremock::MockServer) -> LlmConfig {
+        LlmConfig {
+            base_url: server.uri(),
+            api_key: "key".to_string(),
+            model: "model".to_string(),
+            max_chars_per_call: 24_000,
+        }
+    }
+
+    fn answer(text: &str) -> wiremock::ResponseTemplate {
+        wiremock::ResponseTemplate::new(200)
+            .set_body_json(serde_json::json!({ "choices": [{ "message": { "content": text } }] }))
+    }
+
+    #[tokio::test]
+    async fn a_busy_server_is_asked_again_and_the_minutes_still_arrive() {
+        use wiremock::matchers::method;
+        let server = wiremock::MockServer::start().await;
+        // Busy twice, then well: the mocks are tried in the order they were mounted.
+        wiremock::Mock::given(method("POST"))
+            .respond_with(wiremock::ResponseTemplate::new(503).set_body_string("overloaded"))
+            .up_to_n_times(2)
+            .mount(&server)
+            .await;
+        wiremock::Mock::given(method("POST")).respond_with(answer("## Summary\nDone.")).mount(&server).await;
+
+        let template = crate::templates::template("discussion");
+        let minutes = write_minutes(&config_for(&server), "system", template, "Title", "[00:00] hello", |_, _| {}).await;
+
+        assert_eq!(minutes.unwrap(), "## Summary\nDone.");
+        assert_eq!(server.received_requests().await.unwrap().len(), 3);
+    }
+
+    #[tokio::test]
+    async fn a_wrong_key_is_reported_at_once_and_not_tried_again() {
+        use wiremock::matchers::method;
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(method("POST"))
+            .respond_with(wiremock::ResponseTemplate::new(401).set_body_string("invalid api key"))
+            .mount(&server)
+            .await;
+
+        let template = crate::templates::template("discussion");
+        let error = write_minutes(&config_for(&server), "system", template, "Title", "[00:00] hello", |_, _| {})
+            .await
+            .unwrap_err();
+
+        assert!(error.contains("401") && error.contains("invalid api key"), "{error}");
+        assert_eq!(server.received_requests().await.unwrap().len(), 1);
     }
 
     #[tokio::test]

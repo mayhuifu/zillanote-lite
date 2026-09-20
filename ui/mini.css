@@ -6,60 +6,69 @@
   --muted: #87867f;
   --line: #e8e6dc;
   --brand: #c96442;
-  --brand-hover: #b5573a;
+  /* The icon's own gradient, from scripts/make-icon.py. */
+  --clay-lighter: #eda284;
+  --clay-light: #e28c6c;
+  --clay-deep: #bd5c3c;
   --red: #d2452f;
   --ok: #2f7d4f;
-  font: 11px/1.2 -apple-system, "Segoe UI", sans-serif;
+  font: 8.5px/1.2 -apple-system, "Segoe UI", sans-serif;
 }
 @media (prefers-color-scheme: dark) {
-  :root { --surface: #262624; --text: #f0eee6; --muted: #a3a097; --line: #3d3c38; --brand: #d97757; --brand-hover: #e08a6c; }
+  :root { --surface: #262624; --text: #f0eee6; --muted: #a3a097; --line: #3d3c38; --brand: #d97757; }
 }
 
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; user-select: none; -webkit-user-select: none; }
 
+/* Everything here is six tenths of the first bar (64 by 236), which took too much of the
+   screen. Two things did not shrink all the way, because they have to be read and hit: the
+   timer's digits and the way out. */
 .bar {
   position: relative;
   height: 100%;
   display: flex; flex-direction: column; align-items: center;
   background: var(--surface); color: var(--text);
-  border: 1px solid var(--line); border-radius: 16px;
+  border: 1px solid var(--line); border-radius: 10px;
   overflow: hidden; cursor: default;
 }
 
 /* The way out: only there while the pointer is over the bar, so it is never hit by accident. */
-.quit { position: absolute; top: 4px; right: 4px; width: 14px; height: 14px; border-radius: 50%; display: grid; place-items: center; color: var(--muted); background: var(--line); opacity: 0; transition: opacity 0.15s; }
+.quit { position: absolute; top: 2px; right: 2px; width: 11px; height: 11px; border-radius: 50%; display: grid; place-items: center; color: var(--muted); background: var(--line); opacity: 0; transition: opacity 0.15s; }
+.quit svg { width: 6px; height: 6px; }
 .bar:hover .quit { opacity: 1; }
 .quit:hover { color: #fff; background: var(--red); }
 
-.logo { width: 34px; height: 34px; margin-top: 10px; border-radius: 9px; }
+.logo { width: 20px; height: 20px; margin-top: 6px; border-radius: 5px; }
 
-.meter { display: flex; align-items: center; gap: 3px; height: 22px; margin-top: 10px; }
-.meter i { width: 3px; height: 4px; border-radius: 2px; background: var(--muted); opacity: 0.55; transition: height 0.1s ease-out; }
+.meter { display: flex; align-items: center; gap: 2px; height: 13px; margin-top: 6px; }
+.meter i { width: 2px; height: 3px; border-radius: 1px; background: var(--muted); opacity: 0.55; transition: height 0.1s ease-out; }
 .recording .meter i { background: var(--text); opacity: 1; }
 
-hr { width: 34px; border: none; border-top: 1px solid var(--line); margin: 8px 0 10px; }
+hr { width: 20px; border: none; border-top: 1px solid var(--line); margin: 5px 0 6px; }
 
 button { border: none; background: none; padding: 0; color: inherit; cursor: pointer; font: inherit; }
 
-.record { width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center; border: 2px solid var(--line); }
+.record { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; border: 1.5px solid var(--line); }
 .record:hover { border-color: var(--muted); }
-.record .shape { width: 20px; height: 20px; border-radius: 50%; background: var(--red); transition: border-radius 0.15s, width 0.15s, height 0.15s, background 0.15s; }
-.recording .record .shape { width: 16px; height: 16px; border-radius: 3px; background: var(--text); }
+.record .shape { width: 12px; height: 12px; border-radius: 50%; background: var(--red); transition: border-radius 0.15s, width 0.15s, height 0.15s, background 0.15s; }
+.recording .record .shape { width: 10px; height: 10px; border-radius: 2px; background: var(--text); }
 .record:disabled { opacity: 0.5; cursor: default; }
 
-.timer { height: 14px; margin-top: 5px; font-variant-numeric: tabular-nums; color: var(--muted); }
+.timer { height: 10px; margin-top: 3px; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; color: var(--muted); }
 .recording .timer { color: var(--red); }
 
-.status { position: relative; width: 26px; height: 26px; margin-top: 4px; display: grid; place-items: center; }
-.status .ring { position: absolute; inset: 0; border-radius: 50%; background: conic-gradient(var(--brand) calc(var(--progress, 0) * 1turn), var(--line) 0); -webkit-mask: radial-gradient(circle, transparent 8.5px, #000 9px); mask: radial-gradient(circle, transparent 8.5px, #000 9px); }
+.status { position: relative; width: 16px; height: 16px; margin-top: 2px; display: grid; place-items: center; }
+.status .ring { position: absolute; inset: 0; border-radius: 50%; background: conic-gradient(var(--brand) calc(var(--progress, 0) * 1turn), var(--line) 0); -webkit-mask: radial-gradient(circle, transparent 5px, #000 5.5px); mask: radial-gradient(circle, transparent 5px, #000 5.5px); }
 .status.spin .ring { background: conic-gradient(var(--brand) 0.28turn, var(--line) 0); animation: spin 1.1s linear infinite; }
-.status .glyph { font-size: 12px; font-weight: 700; }
+.status .glyph { font-size: 8px; font-weight: 700; }
 .status.done .ring, .status.failed .ring { display: none; }
-.status.done .glyph { color: var(--ok); font-size: 15px; }
-.status.failed .glyph { color: var(--red); font-size: 15px; }
+.status.done .glyph { color: var(--ok); font-size: 10px; }
+.status.failed .glyph { color: var(--red); font-size: 10px; }
 @keyframes spin { to { transform: rotate(1turn); } }
 
-.expand { margin-top: auto; width: 100%; height: 32px; display: grid; place-items: center; background: var(--brand); color: #fff; }
-.expand:hover { background: var(--brand-hover); }
+/* The tab that opens the window, in the clay of the icon: light at the top, deep below. */
+.expand { margin-top: auto; width: 100%; height: 19px; display: grid; place-items: center; background: linear-gradient(180deg, var(--clay-light), var(--clay-deep)); color: #fff; }
+.expand svg { width: 12px; height: 12px; }
+.expand:hover { background: linear-gradient(180deg, var(--clay-lighter), var(--clay-light)); }
