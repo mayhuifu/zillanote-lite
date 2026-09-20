@@ -106,6 +106,17 @@ button.primary { background: var(--brand); color: #fff; border-color: var(--bran
 input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
 select, input, textarea { font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
 
+/* --- choosing the speech model --- */
+.models { display: flex; flex-direction: column; gap: 6px; }
+#settings-form label.model { flex-direction: row; align-items: flex-start; gap: 10px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; color: var(--text); cursor: pointer; }
+#settings-form label.model:has(input:checked) { border-color: var(--brand); }
+label.model input { margin: 3px 0 0; accent-color: var(--brand); }
+label.model > span { display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+label.model b { font-weight: 600; }
+label.model small { font-size: 12px; color: var(--muted); }
+label.model small.facts { color: var(--text); opacity: 0.8; }
+.tag { font-style: normal; font-weight: 500; font-size: 11px; color: var(--brand); margin-left: 4px; }
+
 /* --- downloading the models --- */
 .download { margin: 0 0 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; font-size: 13px; display: flex; flex-direction: column; gap: 8px; }
 .download p { margin: 0; }

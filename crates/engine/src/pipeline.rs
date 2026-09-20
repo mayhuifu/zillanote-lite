@@ -473,6 +473,8 @@ pub struct Readiness {
     pub model_location: Option<String>,
     pub model_install_dir: String,
     pub models: Vec<ModelChoice>,
+    /// What this machine has, to set next to what a model needs.
+    pub total_memory_bytes: u64,
     pub server_found: bool,
     pub server_location: Option<String>,
     /// Without them the transcript simply has no speaker names.
@@ -509,6 +511,7 @@ impl Pipeline {
                     chosen: *choice == model,
                 })
                 .collect(),
+            total_memory_bytes: qwen3_asr::total_memory_bytes(),
             server_found: server.is_some(),
             server_location: server.map(|path| path.display().to_string()),
             speaker_models_found: SpeakerModels::locate(&self.store.speaker_models_dir()).is_some(),

@@ -303,16 +303,67 @@ async function showReadiness() {
     ? {
         bytes: ready.download_bytes,
         what: !ready.model_found
-          ? "The speech model is not on this Mac yet. Recordings are kept, and transcribed once it is here."
+          ? `The speech model (${ready.model_name}) is not on this Mac yet. Recordings are kept, and transcribed once it is here. Settings has smaller models to choose from.`
           : "Two small models are needed to tell speakers apart.",
       }
     : null;
   renderDownload(await call("download_status"));
+  return ready;
   $("readiness").textContent = [
     `Speech model: ${ready.model_found ? ready.model_location : "not found"}`,
     `Speech engine: ${ready.server_found ? ready.server_location : "not found"}`,
     `Speaker names: ${ready.speaker_models_found ? "on" : "off, the speaker models are not installed"}`,
   ].join("\n");
+}
+
+// --- choosing the speech model ---
+
+let downloadSpeed; // bytes a second on this connection; undefined until measured, null if unreachable
+
+function duration(seconds) {
+  const minutes = Math.max(1, Math.round(seconds / 60));
+  return minutes < 60 ? `about ${minutes} min` : `about ${Math.floor(minutes / 60)} h ${minutes % 60} min`;
+}
+
+function modelFacts(model) {
+  const size = `${gigabytes(model.size_bytes)} download`;
+  const memory = `needs ${gigabytes(model.memory_bytes)} of memory`;
+  if (!model.missing_bytes) return `On this Mac · ${gigabytes(model.size_bytes)} · ${memory}`;
+  const left = model.missing_bytes < model.size_bytes ? `${gigabytes(model.missing_bytes)} still to download` : size;
+  const time =
+    downloadSpeed === undefined
+      ? "measuring your connection…"
+      : downloadSpeed
+        ? `${duration(model.missing_bytes / downloadSpeed)} on this connection`
+        : "download servers not reachable right now";
+  return `${left} · ${time} · ${memory}`;
+}
+
+function renderModels(ready) {
+  $("models-help").textContent =
+    `Transcription runs on this Mac (${Math.round(ready.total_memory_bytes / 2 ** 30)} GB of memory). The bigger the model, the fewer mis-heard words; it needs the memory shown only while a recording is being transcribed.`;
+  const list = $("models");
+  list.innerHTML = "";
+  for (const model of ready.models) {
+    const option = document.createElement("label");
+    option.className = "model";
+    option.innerHTML = `
+      <input type="radio" name="asr-model" value="${model.id}" ${model.chosen ? "checked" : ""} />
+      <span>
+        <span class="name"><b>${escapeHtml(model.name)}</b>${model.id === ready.models[0].id ? ' <em class="tag">recommended</em>' : ""}</span>
+        <small>${escapeHtml(model.description)}</small>
+        <small class="facts">${escapeHtml(modelFacts(model))}</small>
+      </span>`;
+    list.appendChild(option);
+  }
+}
+
+async function measureConnection(ready) {
+  if (downloadSpeed !== undefined || !ready.models.some((model) => model.missing_bytes)) return;
+  downloadSpeed = (await invoke("probe_download_speed").catch(() => null)) || null;
+  // Keep what the user has picked meanwhile.
+  const picked = document.querySelector('input[name="asr-model"]:checked')?.value;
+  renderModels({ ...ready, models: ready.models.map((model) => ({ ...model, chosen: model.id === picked })) });
 }
 
 // --- downloading the models ---
@@ -378,9 +429,11 @@ $("open-settings").addEventListener("click", async () => {
   $("email-server").value = settings.email.server;
   showServerField();
   $("settings").dataset.maxChars = settings.max_chars_per_call;
-  await showReadiness();
+  const ready = await showReadiness();
+  renderModels(ready);
   await showVoices();
   $("settings").showModal();
+  measureConnection(ready);
 });
 
 // The server is only asked for when the sender's provider is not one the app knows.
@@ -402,6 +455,7 @@ function readSettings() {
     max_chars_per_call: Number($("settings").dataset.maxChars) || 24000,
     record_system_audio: $("system-audio").checked,
     auto_minutes: $("auto-minutes").checked,
+    asr_model: document.querySelector('input[name="asr-model"]:checked')?.value,
     email: {
       to: $("email-to").value.trim(),
       from: $("email-from").value.trim(),

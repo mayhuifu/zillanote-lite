@@ -12,6 +12,6 @@ pub use error::Error;
 pub use model::{Qwen3AsrDownload, Qwen3AsrFiles, Qwen3AsrModel};
 pub use server::{
     BINARY_PATH_ENV, LlamaServer, LlamaServerConfig, SERVER_ALIAS, describe_missing_binary,
-    describe_missing_model, find_llama_server, kill_stale_servers,
+    describe_missing_model, find_llama_server, kill_stale_servers, total_memory_bytes,
 };
 pub use text::{TimedWord, strip_asr_prefix, timed_words};

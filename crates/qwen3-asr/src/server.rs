@@ -218,6 +218,13 @@ fn common_install_dirs() -> Vec<PathBuf> {
         .collect()
 }
 
+/// How much memory this machine has, to set next to what a model needs.
+pub fn total_memory_bytes() -> u64 {
+    let mut system = sysinfo::System::new();
+    system.refresh_memory();
+    system.total_memory()
+}
+
 /// Kills servers left behind by a run of the app that could not clean up, and this run's
 /// own, and returns how many were killed. A `llama-server` the user started themselves is
 /// never touched, and neither is the server of another copy of the app that is running right
