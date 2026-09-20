@@ -22,6 +22,16 @@ The Qwen3-ASR model files are picked up from LM Studio if it already has
 `ggml-org/Qwen3-ASR-1.7B-GGUF`; otherwise put the two GGUF files in the folder Settings
 shows. `ZILLANOTE_DATA_DIR` points the app at another data folder (used by the tests).
 
+## Build the installer
+
+```bash
+cd app && pnpm dlx @tauri-apps/cli@2.11.4 build -- --offline
+```
+
+The `.app` and `.dmg` land in `target/release/bundle/` (13 MB installer, 30 MB installed).
+`cargo clean` gives the build folder back whenever disk space matters; a full rebuild takes
+about a minute.
+
 ## Test
 
 ```bash
