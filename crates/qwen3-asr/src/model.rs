@@ -117,9 +117,9 @@ impl Qwen3AsrModel {
     pub const fn description(self) -> &'static str {
         match self {
             Self::Large => "The most accurate, and the one to take for meetings that mix English and Mandarin.",
-            Self::LargeQ4 => "The big model in a little over half the space. Slightly more mis-heard words.",
-            Self::Small => "A third of the download and memory. Good on clear speech in one language; weaker on names, jargon and mixed languages.",
-            Self::SmallQ4 => "The smallest: for a Mac that is short of memory or on a slow line. The most mis-heard words.",
+            Self::LargeQ4 => "The big model in two thirds of the space. In our test its transcripts matched the 8-bit model's to 98%, mixed English and Mandarin included.",
+            Self::Small => "Less than half the download and half the memory, and twice as fast. As good on clear English (98%), weaker on a meeting that mixes English and Mandarin (93%).",
+            Self::SmallQ4 => "The smallest: for a Mac that is short of memory, or a slow line. 98% on clear English, 92% on a mixed meeting.",
         }
     }
 
@@ -137,14 +137,15 @@ impl Qwen3AsrModel {
         self.downloads().iter().map(|file| file.size_bytes).sum()
     }
 
-    /// Memory `llama-server` holds while it transcribes with this model (4096 tokens of
-    /// context, one slot), measured on an M4 Pro. The Mac needs this much to spare.
+    /// Memory `llama-server` holds at its peak while it transcribes with this model (4096
+    /// tokens of context, one slot), measured on an M4 Pro over a three-minute stretch of a
+    /// meeting. The Mac needs this much to spare, for that time only.
     pub const fn memory_bytes(self) -> u64 {
         match self {
-            Self::Large => 3_300_000_000,
-            Self::LargeQ4 => 2_400_000_000,
-            Self::Small => 1_600_000_000,
-            Self::SmallQ4 => 1_300_000_000,
+            Self::Large => 3_500_000_000,
+            Self::LargeQ4 => 2_600_000_000,
+            Self::Small => 1_850_000_000,
+            Self::SmallQ4 => 1_550_000_000,
         }
     }
 
