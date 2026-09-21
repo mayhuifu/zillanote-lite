@@ -93,9 +93,50 @@ pub fn minutes_message(
     Message::builder()
         .from(from)
         .to(to)
-        .subject(format!("Minutes: {title}"))
+        .subject(subject(title, when, minutes_markdown))
         .multipart(MultiPart::alternative_plain_html(plain, html))
         .map_err(|e| e.to_string())
+}
+
+/// "Minutes 2026-09-21: Budget and revenue". The day is enough in a subject line; what tells
+/// one meeting's mail from another's is what the meeting was about.
+pub fn subject(title: &str, when: &str, minutes_markdown: &str) -> String {
+    let day = when.get(..10).filter(|day| chrono::NaiveDate::parse_from_str(day, "%Y-%m-%d").is_ok());
+    let topic = main_topic(title, minutes_markdown);
+    match day {
+        Some(day) => format!("Minutes {day}: {topic}"),
+        None => format!("Minutes: {topic}"),
+    }
+}
+
+/// The name the user gave the meeting; else the first heading of the minutes that says
+/// something. Models like to open with the title they were handed ("Meeting 2026-09-20
+/// 16:34") or a section name ("Overview"), and those say nothing.
+fn main_topic(title: &str, minutes_markdown: &str) -> String {
+    let headings = minutes_markdown.lines().filter_map(|line| {
+        let line = line.trim_start();
+        let text = line.strip_prefix("# ").or_else(|| line.strip_prefix("## "))?;
+        // "## 1. Budget" and "## 一、预算": the number is the template's, not the topic's.
+        let text = text.trim().trim_start_matches(|c: char| c.is_ascii_digit() || "一二三四五六七八九十".contains(c));
+        let text = text.trim_start_matches(['.', '、', ')', '）', ':', '：', ' ']);
+        Some(text.replace(['*', '_', '`'], "").trim().to_string())
+    });
+    std::iter::once(title.trim().to_string())
+        .chain(headings)
+        .find(|candidate| says_something(candidate))
+        .unwrap_or_else(|| "Meeting".to_string())
+}
+
+fn says_something(text: &str) -> bool {
+    const EMPTY_WORDS: &[&str] = &[
+        "meeting", "minutes", "summary", "overview", "discussion", "key", "points", "notes", "of", "the",
+        "会议", "纪要", "记录", "总结", "概述", "概要", "讨论", "要点", "年", "月", "日",
+    ];
+    let mut rest = text.to_lowercase();
+    for word in EMPTY_WORDS {
+        rest = rest.replace(word, "");
+    }
+    rest.chars().filter(|c| c.is_alphabetic()).count() >= 2
 }
 
 /// Markdown to HTML for the mail body. Minutes come from a language model, so any raw HTML
@@ -258,6 +299,24 @@ mod tests {
         assert!(raw.contains("To: hui@example.com"));
         assert!(raw.contains("multipart/alternative"));
         assert!(raw.contains("text/plain") && raw.contains("text/html"));
+    }
+
+    #[test]
+    fn the_subject_has_the_day_and_what_the_meeting_was_about() {
+        let when = "2026-09-20 16:34";
+        // The meeting was never named, and the model opened with the date: the first topic says more.
+        let minutes = "# 2026年9月20日 会议\n\n## 1. 预算与收入测算\n**目标:**\n- ...\n\n## 2. 招聘\n";
+        assert_eq!(subject("Meeting 2026-09-20 16:34", when, minutes), "Minutes 2026-09-20: 预算与收入测算");
+
+        // A title the model wrote itself is the main topic.
+        assert_eq!(subject("Meeting 2026-09-20 16:34", when, "# Q3 supplier review\n\n## 1. Prices\n"), "Minutes 2026-09-20: Q3 supplier review");
+        // The user's own name for the meeting comes first.
+        assert_eq!(subject("Board prep", when, minutes), "Minutes 2026-09-20: Board prep");
+        // Section names say nothing either; with nothing better, the subject stays plain.
+        assert_eq!(subject("Meeting 2026-09-20 16:34", when, "# Meeting 2026-09-20 16:34\n## Overview\n## **Pricing** for 2027\n"), "Minutes 2026-09-20: Pricing for 2027");
+        assert_eq!(subject("Meeting 2026-09-20 16:34", when, "## Summary\nShort."), "Minutes 2026-09-20: Meeting");
+        // The test mail has a sentence where the date goes.
+        assert_eq!(subject("ZillaNote test", "If you can read this, minutes will arrive here.", "## It works"), "Minutes: ZillaNote test");
     }
 
     #[test]

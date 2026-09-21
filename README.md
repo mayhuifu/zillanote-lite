@@ -43,7 +43,9 @@ background, on this machine except for the language model you choose.
   bar by its logo.
 - **Email:** fill in one address in Settings, plus the mail account that sends (its app
   password, or authorization code for QQ and 163), and every set of minutes is mailed there
-  as soon as it is written. The server is worked out from the sender's address for Gmail,
+  as soon as it is written, under a subject with the day and what the meeting was about
+  ("Minutes 2026-09-21: Budget and revenue": the meeting's name if you gave it one, else the
+  first heading of the minutes that says something). The server is worked out from the sender's address for Gmail,
   Outlook.com, iCloud, Yahoo, QQ, 163 and 126; any other provider shows a server field.
   "Send a test email" leaves the server's answer on the page and in the log; a refused
   password comes with what that provider wants instead (Gmail: an app password, which needs
