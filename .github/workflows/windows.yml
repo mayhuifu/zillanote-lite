@@ -1,0 +1,81 @@
+# Builds, tests and starts ZillaNote on a Windows machine, and keeps the installer.
+# Runs on a push to the branch `windows-port`, on a version tag, or by hand.
+name: Windows
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [windows-port]
+    tags: ["v*"]
+
+permissions:
+  contents: write # a version tag's installer is attached to its release
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 90
+    env:
+      CARGO_TERM_COLOR: always
+      # The TLS library behind the mailer ships assembly already built, so NASM is not needed.
+      AWS_LC_SYS_PREBUILT_NASM: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustc --version
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Speech engine and ONNX Runtime
+        run: |
+          node scripts/fetch-llama-server.mjs
+          node scripts/fetch-onnxruntime.mjs
+
+      - name: Unit tests
+        run: |
+          $env:PATH = "$pwd\vendor\onnxruntime\lib;$env:PATH"
+          cargo test --workspace --locked
+
+      - name: Installer
+        working-directory: app
+        run: npx --yes @tauri-apps/cli@2.11.4 build
+
+      - name: The built app starts
+        run: |
+          Copy-Item vendor\onnxruntime\lib\DirectML.dll target\release\ -ErrorAction SilentlyContinue
+          $data = Join-Path $env:RUNNER_TEMP "zillanote-data"
+          New-Item -ItemType Directory -Force $data | Out-Null
+          $env:ZILLANOTE_DATA_DIR = $data
+          $log = Join-Path $data "zillanote.log"
+          $app = Start-Process -FilePath "target\release\zillanote.exe" -PassThru
+          $ready = $false
+          foreach ($second in 1..90) {
+            Start-Sleep -Seconds 1
+            if ((Test-Path $log) -and ((Select-String -Path $log -Pattern "ui_ready" | Measure-Object).Count -ge 2)) { $ready = $true; break }
+            if ($app.HasExited) { break }
+          }
+          if (Test-Path $log) { Get-Content $log }
+          if ($app.HasExited) { Write-Host "exit code $($app.ExitCode)" } else { Stop-Process -Id $app.Id -Force }
+          if (-not $ready) { throw "The app did not report both of its pages ready." }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ZillaNote-windows-x64
+          path: target/release/bundle/nsis/*.exe
+          if-no-files-found: error
+
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $installer = (Get-ChildItem target\release\bundle\nsis\*.exe | Select-Object -First 1).FullName
+          gh release upload $env:GITHUB_REF_NAME $installer --clobber

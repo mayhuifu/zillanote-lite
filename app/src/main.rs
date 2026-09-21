@@ -643,10 +643,19 @@ fn build_tray(app: &AppHandle) -> tauri::Result<MenuItem<tauri::Wry>> {
         ],
     )?;
 
-    TrayIconBuilder::with_id("tray")
+    // macOS tints a template image to suit the menu bar. Anywhere else a black mark would
+    // vanish on a dark taskbar, so the app's own icon goes there.
+    let tray = TrayIconBuilder::with_id("tray");
+    #[cfg(target_os = "macos")]
+    let tray = tray
         .icon(tauri::image::Image::from_bytes(include_bytes!("../icons/tray.png"))?)
-        .icon_as_template(true)
-        .tooltip("ZillaNote")
+        .icon_as_template(true);
+    #[cfg(not(target_os = "macos"))]
+    let tray = match app.default_window_icon() {
+        Some(icon) => tray.icon(icon.clone()),
+        None => tray,
+    };
+    tray.tooltip("ZillaNote")
         .menu(&menu)
         .on_menu_event(|app, event| {
             let recording = || app.state::<App>().active.lock().is_ok_and(|active| active.is_some());

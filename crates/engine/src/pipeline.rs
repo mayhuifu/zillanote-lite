@@ -536,6 +536,14 @@ mod tests {
 
     use super::*;
 
+    /// A folder that stands for another one, the way each system spells it.
+    fn link_dir(original: &std::path::Path, link: &std::path::Path) {
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(original, link).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_dir(original, link).unwrap();
+    }
+
     #[test]
     fn only_meetings_that_failed_for_want_of_the_speech_model_wait_for_it() {
         let dir = tempfile::tempdir().unwrap();
@@ -612,7 +620,7 @@ mod tests {
         let speaker_models = std::env::var("ZILLANOTE_SPEAKER_MODELS").ok();
         if let Some(models) = &speaker_models {
             std::fs::create_dir_all(store.models_dir()).unwrap();
-            std::os::unix::fs::symlink(models, store.speaker_models_dir()).unwrap();
+            link_dir(std::path::Path::new(models), &store.speaker_models_dir());
         }
         // Another speech model than the default: ZILLANOTE_TEST_ASR_MODEL=qwen3-asr-0.6b, with
         // ZILLANOTE_TEST_MODELS naming a models folder that holds it (as the app's own does).
@@ -624,7 +632,7 @@ mod tests {
         if let Ok(models) = std::env::var("ZILLANOTE_TEST_MODELS") {
             std::fs::create_dir_all(store.models_dir()).unwrap();
             let link = store.models_dir().join("qwen3-asr");
-            std::os::unix::fs::symlink(std::path::Path::new(&models).join("qwen3-asr"), link).unwrap();
+            link_dir(&std::path::Path::new(&models).join("qwen3-asr"), &link);
         }
 
         let pipeline = Pipeline {

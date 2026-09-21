@@ -3,6 +3,10 @@
 //! macOS hands it over through a Core Audio process tap (14.2 and later). The first use
 //! makes macOS ask for the "System Audio Recording" permission; without it the tap still
 //! runs and delivers silence, so a refusal costs the far side of the call and nothing else.
+//!
+//! Windows hands it over through WASAPI loopback: the playback device, opened as if it were
+//! a microphone. It asks nobody, and it delivers nothing while nothing plays, which the
+//! recorder's clock-keeping fills with silence.
 
 use std::sync::mpsc;
 
@@ -18,6 +22,8 @@ pub struct SystemAudioStream {
 pub struct SystemAudio {
     #[cfg(target_os = "macos")]
     tap: macos::Tap,
+    #[cfg(windows)]
+    _stream: cpal::Stream,
 }
 
 impl SystemAudio {
@@ -39,9 +45,46 @@ impl SystemAudio {
         None
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(windows)]
     pub fn start() -> Result<(Self, SystemAudioStream), String> {
-        Err("Recording the computer's sound is only built for macOS so far.".to_string())
+        use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+
+        let device = cpal::default_host()
+            .default_output_device()
+            .ok_or_else(|| "This PC has no sound output to listen to.".to_string())?;
+        let supported = device
+            .default_output_config()
+            .map_err(|e| format!("The computer's sound could not be opened: {e}"))?;
+        if supported.sample_format() != cpal::SampleFormat::F32 {
+            return Err("The computer's sound comes in a format ZillaNote does not read.".to_string());
+        }
+        let config: cpal::StreamConfig = supported.into();
+
+        let (sender, blocks) = mpsc::channel();
+        // An input stream on a playback device is what WASAPI calls loopback.
+        let stream = device
+            .build_input_stream(
+                &config,
+                move |data: &[f32], _: &cpal::InputCallbackInfo| {
+                    let _ = sender.send(data.to_vec());
+                },
+                |error| tracing::warn!(%error, "system_audio_stream_error"),
+                None,
+            )
+            .map_err(|e| format!("The computer's sound could not be opened: {e}"))?;
+        stream.play().map_err(|e| format!("The computer's sound could not be started: {e}"))?;
+
+        let stream_info = SystemAudioStream {
+            rate: config.sample_rate,
+            channels: config.channels as usize,
+            blocks,
+        };
+        Ok((Self { _stream: stream }, stream_info))
+    }
+
+    #[cfg(not(any(target_os = "macos", windows)))]
+    pub fn start() -> Result<(Self, SystemAudioStream), String> {
+        Err("Recording the computer's sound is built for macOS and Windows so far.".to_string())
     }
 }
 

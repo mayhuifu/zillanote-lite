@@ -22,7 +22,18 @@ const ASSETS = {
     name: "aarch64-apple-darwin.tgz",
     sha256: "00fbfd6f08bac2a4e28c66723af900d58d1b4b1c73efba6290637cd3019883d5",
   },
+  "win32-x64": {
+    name: "x86_64-pc-windows-msvc.tgz",
+    sha256: "540d19b3379fda6fb8f7280d8c15efde20ed225a67a357a6dae38c4300fe190d",
+  },
 };
+
+// Windows' own tar (bsdtar). Git for Windows brings a GNU tar that may come first on the
+// PATH and reads neither .zip nor a path with a drive letter.
+const TAR =
+  process.platform === "win32"
+    ? path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe")
+    : "tar";
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const targetDir = path.join(scriptDir, "..", "vendor", "onnxruntime");
@@ -69,7 +80,7 @@ try {
   // The archive holds one folder, onnxruntime/, with lib/ inside.
   fs.rmSync(targetDir, { recursive: true, force: true });
   fs.mkdirSync(path.dirname(targetDir), { recursive: true });
-  run("tar", ["-xf", archivePath, "-C", path.dirname(targetDir)]);
+  run(TAR, ["-xf", archivePath, "-C", path.dirname(targetDir)]);
   fs.writeFileSync(stampPath, `${stamp}\n`);
 
   console.log(`[fetch-onnxruntime] ${VERSION} in ${path.relative(process.cwd(), targetDir)}`);

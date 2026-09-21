@@ -133,7 +133,12 @@ try {
   const extractDir = path.join(workDir, "extracted");
   fs.mkdirSync(extractDir);
   // bsdtar, which ships with macOS and Windows 10+, reads both .tar.gz and .zip.
-  run("tar", ["-xf", archivePath, "-C", extractDir]);
+  // Git for Windows brings a GNU tar that may come first on the PATH and reads no .zip.
+  const tar =
+    process.platform === "win32"
+      ? path.join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe")
+      : "tar";
+  run(tar, ["-xf", archivePath, "-C", extractDir]);
 
   const extracted = filesUnder(extractDir);
   const binary = extracted.find((file) => path.basename(file) === binaryName);
