@@ -132,7 +132,7 @@ cargo test -p engine live_recording -- --ignored --nocapture      # plays 8 s of
 | `crates/engine` | recorder (microphone and system audio), mixdown, pause-based chunking, cutting at speaker turns, named voices, model download, pipeline, minutes, templates, file store |
 | `app` | the Tauri shell: commands, events, one window |
 | `ui` | two pages (`mini.html` the bar, `index.html` the full window): plain HTML, CSS and JavaScript, no build step |
-| `scripts/make-icon.py` | draws the icon (an ear in violet on warm paper) and the menu-bar mark; `tauri icon` turns the icon into every format |
+| `scripts/make-icon.py` | draws the icon (an ear in violet light on graphite) and the menu-bar mark; `tauri icon` turns the icon into every format |
 
 ## Not built yet
 

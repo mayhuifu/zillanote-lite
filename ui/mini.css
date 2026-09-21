@@ -1,23 +1,21 @@
 :root {
-  color-scheme: light dark;
-  /* Warm paper and terracotta, as in the icon. */
-  --surface: #faf9f5;
-  --text: #1f1e1d;
-  --muted: #87867f;
-  --line: #e8e6dc;
-  --brand: #8b45e0;
-  /* The icon's own gradient, from scripts/make-icon.py. */
-  --violet-lighter: #c3a0f8;
-  --violet-light: #a878f2;
-  --violet-deep: #7a35d1;
-  --red: #d2452f;
-  --ok: #2f7d4f;
+  color-scheme: dark;
+  /* Graphite, as in the icon, whatever the system's appearance: the bar floats over other
+     people's windows, and a dark one reads on all of them. */
+  --surface: #232329;
+  --text: #f0f0f5;
+  --muted: #8d8d9b;
+  --line: #3a3a44;
+  --brand: #9b85ee;
+  /* The ear's own violet, from scripts/make-icon.py. */
+  --violet-lighter: #c7bbf7;
+  --violet-light: #9b85ee;
+  --violet-deep: #4a31a6;
+  /* Brighter than the window's red, to be read on graphite. */
+  --red: #f0604a;
+  --ok: #58b982;
   font: 8.5px/1.2 -apple-system, "Segoe UI", sans-serif;
 }
-@media (prefers-color-scheme: dark) {
-  :root { --surface: #262624; --text: #f0eee6; --muted: #a3a097; --line: #3d3c38; --brand: #a878f2; }
-}
-
 * { box-sizing: border-box; }
 [hidden] { display: none !important; }
 html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; user-select: none; -webkit-user-select: none; }
@@ -52,8 +50,8 @@ button { border: none; background: none; padding: 0; color: inherit; cursor: poi
 
 .record { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; border: 1.5px solid var(--line); }
 .record:hover { border-color: var(--muted); }
-.record .shape { width: 12px; height: 12px; border-radius: 50%; background: var(--red); transition: border-radius 0.15s, width 0.15s, height 0.15s, background 0.15s; }
-.recording .record .shape { width: 10px; height: 10px; border-radius: 2px; background: var(--text); }
+.record .shape { width: 13px; height: 13px; border-radius: 50%; background: radial-gradient(circle at 36% 30%, var(--violet-lighter), var(--brand) 50%, var(--violet-deep)); transition: border-radius 0.15s, width 0.15s, height 0.15s, background 0.15s; }
+.recording .record .shape { width: 10px; height: 10px; border-radius: 2px; background: var(--red); }
 .record:disabled { opacity: 0.5; cursor: default; }
 
 .timer { height: 10px; margin-top: 3px; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; color: var(--muted); }

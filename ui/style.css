@@ -1,16 +1,17 @@
 :root {
   color-scheme: light dark;
-  /* Warm paper and violet, as in the icon. Red stays for a recording under way and for trouble. */
-  --bg: #faf9f5;
+  /* Cool grey paper and the icon's violet. Red stays for a recording under way and for trouble. */
+  --bg: #f4f4f6;
   --surface: #ffffff;
-  --text: #1f1e1d;
-  --muted: #73726c;
-  --line: #e8e6dc;
+  --text: #1c1c22;
+  --muted: #64646f;
+  --line: #e3e3ea;
   --accent: #d2452f;
-  --brand: #8b45e0;
-  --brand-lighter: #c3a0f8;
-  --brand-deep: #6a2bbd;
-  --brand-soft: rgba(139, 69, 224, 0.14);
+  --brand: #6a4bd4;
+  --brand-lighter: #c7bbf7;
+  --brand-deep: #4a31a6;
+  --brand-fill: #6a4bd4;
+  --brand-soft: rgba(106, 75, 212, 0.14);
   --accent-soft: rgba(210, 69, 47, 0.13);
   --ok: #2f7d4f;
   --warn-bg: #f7ecd9;
@@ -20,12 +21,13 @@
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #1f1e1d;
-    --surface: #2a2927;
-    --text: #f0eee6;
-    --muted: #a3a097;
-    --line: #3d3c38;
-    --brand: #a878f2;
+    --bg: #1c1c21;
+    --surface: #26262c;
+    --text: #f0f0f5;
+    --muted: #a0a0ad;
+    --line: #3a3a44;
+    --brand: #9b85ee;
+    --brand-soft: rgba(155, 133, 238, 0.2);
     --warn-bg: #3a2f17;
     --warn-text: #f1cf8a;
   }
@@ -52,13 +54,13 @@ button.icon { border: none; background: none; font-size: 18px; padding: 4px 8px;
 button.icon:hover, button.text:hover { background: var(--line); }
 button.text { border: none; background: none; color: var(--muted); padding: 6px 8px; }
 button.danger { color: var(--accent); }
-button.primary { background: var(--brand); color: #fff; border-color: var(--brand); }
+button.primary { background: var(--brand-fill); color: #fff; border-color: var(--brand-fill); }
 
 /* --- recorder --- */
 .recorder { display: flex; flex-direction: column; align-items: center; padding: 26px 0 18px; }
 .record { position: relative; width: 132px; height: 132px; border-radius: 50%; border: none; background: none; padding: 0; }
 .record .ring { position: absolute; inset: 0; border-radius: 50%; background: var(--brand-soft); transform: scale(var(--level, 0.82)); transition: transform 0.12s ease-out; }
-.record .dot { position: absolute; inset: 22px; border-radius: 50%; background: radial-gradient(circle at 36% 30%, var(--brand-lighter), var(--brand) 46%, var(--brand-deep)); box-shadow: 0 6px 18px rgba(106, 43, 189, 0.38); transition: border-radius 0.2s, inset 0.2s; }
+.record .dot { position: absolute; inset: 22px; border-radius: 50%; background: radial-gradient(circle at 36% 30%, var(--brand-lighter), var(--brand) 46%, var(--brand-deep)); box-shadow: 0 6px 18px rgba(74, 49, 166, 0.38); transition: border-radius 0.2s, inset 0.2s; }
 .record:hover .dot { filter: brightness(1.06); }
 .record.recording .ring { background: var(--accent-soft); }
 .record.recording .dot { inset: 44px; border-radius: 10px; background: var(--accent); box-shadow: 0 6px 18px rgba(217, 58, 43, 0.35); }

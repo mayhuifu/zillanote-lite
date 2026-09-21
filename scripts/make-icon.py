@@ -1,4 +1,4 @@
-"""Draws the ZillaNote icon: an ear in violet on warm paper.
+"""Draws the ZillaNote icon: an ear in violet light on graphite.
 
     python3 scripts/make-icon.py                # needs Pillow
     cd app && pnpm dlx @tauri-apps/cli@2.11.4 icon icons/source-1024.png -o icons
@@ -19,9 +19,9 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 # Warm paper and terracotta: the app sits next to Claude and should look at home there.
-PAPER_LIGHT, PAPER_DEEP = (252, 250, 245), (233, 225, 211)
-VIOLET_LIGHT, VIOLET_DEEP = (168, 120, 242), (122, 53, 209)
-VIOLET_SHADOW = (58, 24, 110)
+PAPER_LIGHT, PAPER_DEEP = (58, 58, 68), (28, 28, 34)  # graphite
+VIOLET_LIGHT, VIOLET_DEEP = (199, 187, 247), (132, 104, 232)
+VIOLET_SHADOW = (8, 6, 20)
 
 
 def background():
