@@ -108,6 +108,22 @@ Privacy & Security**, find "ZillaNote was blocked", and press **Open Anyway**; o
 `xattr -dr com.apple.quarantine /Applications/ZillaNote.app`. Without the ad hoc signature
 macOS calls a downloaded copy "damaged" and offers nothing but the Trash.
 
+## Windows
+
+A preview: it is built and started on a Windows machine by
+[`.github/workflows/windows.yml`](.github/workflows/windows.yml) (unit tests, the installer,
+and a start of the built app until both pages report ready), and has not yet been used for
+a real meeting there. Push the branch `windows-port`, push a version tag, or start the job
+by hand; the installer (`ZillaNote_<version>_x64-setup.exe`, for the current user, no
+administrator needed) is kept with the run and attached to a tag's release.
+
+- The computer's sound comes through WASAPI loopback, so the far side of a call is recorded
+  as on the Mac, without a permission question.
+- The speech engine is llama.cpp's CPU build for Windows, fetched by the same script.
+- The installer is not signed, so SmartScreen says "Windows protected your PC": choose
+  **More info**, then **Run anyway**.
+- Settings, meetings and the log are under `%APPDATA%\com.zillanote.lite\`.
+
 ## Test
 
 ```bash
@@ -138,6 +154,7 @@ cargo test -p engine live_recording -- --ignored --nocapture      # plays 8 s of
 
 ## Not built yet
 
-- Windows. The recorder's system audio, the import converter and the keychain are macOS
-  code behind `cfg`; each needs its Windows counterpart.
+- On Windows: the API key and mail password in the Credential Manager (they stay in
+  `settings.json` there), and importing anything but WAV (macOS's converter does that on
+  the Mac).
 - Signing and notarizing the app, which also ends the keychain question at every update.

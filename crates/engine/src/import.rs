@@ -75,7 +75,6 @@ fn convert(_: &Path, _: &Path) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::audio::rms;
 
     /// One second of a 500 Hz tone, stereo at 48 kHz.
     fn recording(path: &Path) {
@@ -127,7 +126,7 @@ mod tests {
 
         assert!((seconds - 1.0).abs() < 0.1, "{seconds}");
         let samples = read_wav_16k_mono(&target).unwrap();
-        assert!((rms(&samples[2_000..14_000]) - 0.345).abs() < 0.05);
+        assert!((crate::audio::rms(&samples[2_000..14_000]) - 0.345).abs() < 0.05);
     }
 
     #[test]
