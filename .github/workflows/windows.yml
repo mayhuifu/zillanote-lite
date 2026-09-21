@@ -50,7 +50,13 @@ jobs:
         working-directory: app
         run: npx --yes @tauri-apps/cli@2.11.4 build
 
-      - name: The built app starts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ZillaNote-windows-x64
+          path: target/release/bundle/nsis/*.exe
+          if-no-files-found: error
+
+      - name: The built app starts, with its bar at the size it was drawn
         run: |
           Copy-Item vendor\onnxruntime\lib\DirectML.dll target\release\ -ErrorAction SilentlyContinue
           $data = Join-Path $env:RUNNER_TEMP "zillanote-data"
@@ -67,12 +73,13 @@ jobs:
           if (Test-Path $log) { Get-Content $log }
           if ($app.HasExited) { Write-Host "exit code $($app.ExitCode)" } else { Stop-Process -Id $app.Id -Force }
           if (-not $ready) { throw "The app did not report both of its pages ready." }
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ZillaNote-windows-x64
-          path: target/release/bundle/nsis/*.exe
-          if-no-files-found: error
+          # Windows has a smallest width of its own for a window, which once made the bar
+          # several times as wide as on the Mac.
+          $bar = Select-String -Path $log -Pattern "bar_size width=(\d+)(?:\.\d+)? height=(\d+)" | Select-Object -First 1
+          if (-not $bar) { throw "The app did not say how big its bar is." }
+          $width = [int]$bar.Matches[0].Groups[1].Value
+          $height = [int]$bar.Matches[0].Groups[2].Value
+          if ($width -ne 38 -or [math]::Abs($height - 142) -gt 2) { throw "The bar is $width by $height points, not 38 by 142." }
 
       - name: Attach to the release
         if: startsWith(github.ref, 'refs/tags/v')

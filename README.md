@@ -120,6 +120,9 @@ administrator needed) is kept with the run and attached to a tag's release.
 - The computer's sound comes through WASAPI loopback, so the far side of a call is recorded
   as on the Mac, without a permission question.
 - The speech engine is llama.cpp's CPU build for Windows, fetched by the same script.
+- The bar is the 38 by 142 points it is on the Mac. Windows has a smallest width of its own
+  for a window, several times that; the app overrides it for the bar at start, and the job
+  fails if the bar reports any other size.
 - The installer is not signed, so SmartScreen says "Windows protected your PC": choose
   **More info**, then **Run anyway**.
 - Settings, meetings and the log are under `%APPDATA%\com.zillanote.lite\`.

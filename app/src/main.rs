@@ -12,7 +12,7 @@ use engine::store::{Meeting, Settings, Status, Store};
 use engine::templates::{DEFAULT_SYSTEM_PROMPT, TEMPLATES, Template};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Emitter, Manager, PhysicalPosition, RunEvent, State, WindowEvent};
+use tauri::{AppHandle, Emitter, LogicalSize, Manager, PhysicalPosition, RunEvent, State, WindowEvent};
 use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
 
 const MEETING_UPDATED: &str = "meeting-updated";
@@ -570,11 +570,34 @@ fn show_mini(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Windows makes no window with a title bar narrower than its own smallest width (136
+/// pixels at 100%), and to Windows the bar has one, hidden: it came out several times as
+/// wide as it was drawn. A smallest size of our own lifts that limit, but only for a window
+/// that is already there, so the size is asked for a second time. The app's menu comes off
+/// first: on Windows it is a row inside every window, which the bar never shows and would
+/// still be measured with.
+fn narrow_mini(app: &AppHandle, mini: &tauri::WebviewWindow) {
+    let Some(drawn) = app.config().app.windows.iter().find(|window| window.label == MINI) else {
+        return;
+    };
+    let size = LogicalSize::new(drawn.width, drawn.height);
+    let _ = mini.remove_menu();
+    let _ = mini.set_min_size(Some(size));
+    let _ = mini.set_size(size);
+}
+
 /// The bar starts at the right edge of the main screen, half way down.
 fn place_mini(app: &AppHandle) {
     let Some(mini) = app.get_webview_window(MINI) else {
         return;
     };
+    if cfg!(windows) {
+        narrow_mini(app, &mini);
+    }
+    if let (Ok(size), Ok(scale)) = (mini.inner_size(), mini.scale_factor()) {
+        let size = size.to_logical::<f64>(scale);
+        tracing::info!(width = size.width.round(), height = size.height.round(), scale, "bar_size");
+    }
     let (Ok(Some(monitor)), Ok(size)) = (mini.primary_monitor(), mini.outer_size()) else {
         return;
     };
