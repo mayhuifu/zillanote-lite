@@ -6,13 +6,19 @@
   --text: #1c1c22;
   --muted: #64646f;
   --line: #e3e3ea;
-  --accent: #d2452f;
+  --accent: #cf3042;
   --brand: #6a4bd4;
   --brand-lighter: #c7bbf7;
   --brand-deep: #4a31a6;
   --brand-fill: #6a4bd4;
   --brand-soft: rgba(106, 75, 212, 0.14);
-  --accent-soft: rgba(210, 69, 47, 0.13);
+  --brand-halo: rgba(106, 75, 212, 0.24);
+  /* The stop button: the bar's graphite, and a red bright enough to sit on it. */
+  --graphite-light: #4c4c59;
+  --graphite: #26262c;
+  --graphite-deep: #17171c;
+  --stop: #e5484d;
+  --accent-soft: rgba(207, 48, 66, 0.12);
   --ok: #2f7d4f;
   --warn-bg: #f7ecd9;
   --warn-text: #6f4a12;
@@ -28,6 +34,10 @@
     --line: #3a3a44;
     --brand: #9b85ee;
     --brand-soft: rgba(155, 133, 238, 0.2);
+    --brand-halo: rgba(155, 133, 238, 0.32);
+    --graphite-light: #5c5c6b;
+    --graphite: #363640;
+    --graphite-deep: #26262d;
     --warn-bg: #3a2f17;
     --warn-text: #f1cf8a;
   }
@@ -60,10 +70,14 @@ button.primary { background: var(--brand-fill); color: #fff; border-color: var(-
 .recorder { display: flex; flex-direction: column; align-items: center; padding: 26px 0 18px; }
 .record { position: relative; width: 132px; height: 132px; border-radius: 50%; border: none; background: none; padding: 0; }
 .record .ring { position: absolute; inset: 0; border-radius: 50%; background: var(--brand-soft); transform: scale(var(--level, 0.82)); transition: transform 0.12s ease-out; }
-.record .dot { position: absolute; inset: 22px; border-radius: 50%; background: radial-gradient(circle at 36% 30%, var(--brand-lighter), var(--brand) 46%, var(--brand-deep)); box-shadow: 0 6px 18px rgba(74, 49, 166, 0.38); transition: border-radius 0.2s, inset 0.2s; }
+.record .dot { position: absolute; inset: 22px; border-radius: 50%; background: radial-gradient(circle at 36% 30%, var(--brand-lighter), var(--brand) 46%, var(--brand-deep)); box-shadow: 0 6px 18px rgba(74, 49, 166, 0.38); transition: background 0.2s; }
 .record:hover .dot { filter: brightness(1.06); }
-.record.recording .ring { background: var(--accent-soft); }
-.record.recording .dot { inset: 44px; border-radius: 10px; background: var(--accent); box-shadow: 0 6px 18px rgba(217, 58, 43, 0.35); }
+/* While a recording runs the button is the bar's in large: graphite, with the red square that
+   means stop. The halo stays violet and moves with the voice. */
+.record .dot::after { content: ""; position: absolute; inset: 50%; border-radius: 9px; background: var(--stop); transition: inset 0.2s; }
+.record.recording .ring { background: var(--brand-halo); }
+.record.recording .dot { background: radial-gradient(circle at 36% 30%, var(--graphite-light), var(--graphite) 55%, var(--graphite-deep)); box-shadow: 0 6px 18px rgba(20, 20, 30, 0.35); }
+.record.recording .dot::after { inset: 27px; }
 .record:disabled .dot { background: var(--muted); box-shadow: none; }
 .timer { font-size: 30px; font-variant-numeric: tabular-nums; font-weight: 300; margin-top: 12px; color: var(--muted); }
 .recording ~ .timer { color: var(--text); }
