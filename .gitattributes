@@ -1,0 +1,8 @@
+# The same line endings on every system: a test compares docs/default-system-prompt.md with
+# the prompt in the code byte for byte, and the scripts are run by tools that expect LF.
+* text=auto eol=lf
+*.png binary
+*.icns binary
+*.ico binary
+*.wav binary
+*.onnx binary
