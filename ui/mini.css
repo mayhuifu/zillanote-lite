@@ -53,9 +53,18 @@ button { border: none; background: none; padding: 0; color: inherit; cursor: poi
 .record .shape { width: 13px; height: 13px; border-radius: 50%; background: radial-gradient(circle at 36% 30%, var(--violet-lighter), var(--brand) 50%, var(--violet-deep)); transition: border-radius 0.15s, width 0.15s, height 0.15s, background 0.15s; }
 .recording .record .shape { width: 10px; height: 10px; border-radius: 2px; background: var(--red); }
 .record:disabled { opacity: 0.5; cursor: default; }
+/* A call program has opened the microphone: the button asks to be pressed. */
+.call .record { border-color: var(--violet-light); animation: call 1.4s ease-in-out infinite; }
+@keyframes call {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(155, 133, 238, 0); }
+  50% { box-shadow: 0 0 0 4px rgba(155, 133, 238, 0.6); }
+}
 
 .timer { height: 10px; margin-top: 3px; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; color: var(--muted); }
 .recording .timer { color: var(--red); }
+/* The call ended: the seconds left, in the violet of a choice, and a click keeps recording. */
+.ending .timer { color: var(--violet-lighter); cursor: pointer; animation: blink 1s steps(2, jump-none) infinite; }
+@keyframes blink { to { opacity: 0.45; } }
 
 .status { position: relative; width: 16px; height: 16px; margin-top: 2px; display: grid; place-items: center; }
 .status .ring { position: absolute; inset: 0; border-radius: 50%; background: conic-gradient(var(--brand) calc(var(--progress, 0) * 1turn), var(--line) 0); -webkit-mask: radial-gradient(circle, transparent 5px, #000 5.5px); mask: radial-gradient(circle, transparent 5px, #000 5.5px); }

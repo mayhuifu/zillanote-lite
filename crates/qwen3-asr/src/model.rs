@@ -1,8 +1,10 @@
 use std::path::{Path, PathBuf};
 
-/// Qwen3-ASR weights served by a local `llama-server`: two sizes, each at two precisions.
-/// The big one at 8 bits is what the app was built and tested with; the others trade some
-/// accuracy for a smaller download and less memory.
+/// Qwen3-ASR weights served by a local `llama-server`: the big model at 8 bits, which the
+/// app was built and tested with, and the small one at 4 bits, which trades some accuracy
+/// for a third of the download and half the memory. The two in-between choices of earlier
+/// versions (1.7B at 4 bits, 0.6B at 8 bits) are read from old settings as the nearest of
+/// these two.
 #[derive(
     Debug,
     Clone,
@@ -17,19 +19,13 @@ use std::path::{Path, PathBuf};
     PartialEq,
 )]
 pub enum Qwen3AsrModel {
-    #[serde(rename = "qwen3-asr-1.7b")]
-    #[strum(serialize = "qwen3-asr-1.7b")]
+    #[serde(rename = "qwen3-asr-1.7b", alias = "qwen3-asr-1.7b-q4")]
+    #[strum(serialize = "qwen3-asr-1.7b-q4", to_string = "qwen3-asr-1.7b")]
     Large,
-    #[serde(rename = "qwen3-asr-1.7b-q4")]
-    #[strum(serialize = "qwen3-asr-1.7b-q4")]
-    LargeQ4,
-    #[serde(rename = "qwen3-asr-0.6b")]
-    #[strum(serialize = "qwen3-asr-0.6b")]
-    Small,
     /// What a new installation starts with: the smallest download, and the least memory.
     #[default]
-    #[serde(rename = "qwen3-asr-0.6b-q4")]
-    #[strum(serialize = "qwen3-asr-0.6b-q4")]
+    #[serde(rename = "qwen3-asr-0.6b-q4", alias = "qwen3-asr-0.6b")]
+    #[strum(serialize = "qwen3-asr-0.6b", to_string = "qwen3-asr-0.6b-q4")]
     SmallQ4,
 }
 
@@ -51,23 +47,11 @@ const LARGE_Q8: Qwen3AsrDownload = Qwen3AsrDownload {
     size_bytes: 2_165_034_944,
     sha256: "58e22d0532d4eacaf034cfac17a6fed159f37c41390c710186783be439d1fc57",
 };
-const LARGE_Q4: Qwen3AsrDownload = Qwen3AsrDownload {
-    file_name: "Qwen3-ASR-1.7B.Q4_K_M.gguf",
-    url: "https://huggingface.co/mradermacher/Qwen3-ASR-1.7B-GGUF/resolve/cc946c78d3804752f7ba1bc42720c0f7aaf3d1ad/Qwen3-ASR-1.7B.Q4_K_M.gguf",
-    size_bytes: 1_282_435_552,
-    sha256: "3893b8926065bbff3da7586d21d8711a9b4fa4fa8f12cd0cefad58e31b2660b6",
-};
 const LARGE_MMPROJ: Qwen3AsrDownload = Qwen3AsrDownload {
     file_name: "mmproj-Qwen3-ASR-1.7B-bf16.gguf",
     url: "https://huggingface.co/ggml-org/Qwen3-ASR-1.7B-GGUF/resolve/36a678687ba7d07a74ca70ccb0e36902e005fb80/mmproj-Qwen3-ASR-1.7B-bf16.gguf",
     size_bytes: 641_773_984,
     sha256: "8882e9ddab3186f9aa71b1417c847177913e1466655ac944cf86e9b846735d62",
-};
-const SMALL_Q8: Qwen3AsrDownload = Qwen3AsrDownload {
-    file_name: "Qwen3-ASR-0.6B-Q8_0.gguf",
-    url: "https://huggingface.co/ggml-org/Qwen3-ASR-0.6B-GGUF/resolve/928ab958557df9aa2ef1c93e0e83c7ad0933fae2/Qwen3-ASR-0.6B-Q8_0.gguf",
-    size_bytes: 804_749_248,
-    sha256: "bca259818b50ca7c4c05e9bdb35a5dc04fa039653a6d6f3f0f331f96f6aa1971",
 };
 const SMALL_Q4: Qwen3AsrDownload = Qwen3AsrDownload {
     file_name: "Qwen3-ASR-0.6B.Q4_K_M.gguf",
@@ -90,7 +74,7 @@ pub struct Qwen3AsrFiles {
 }
 
 impl Qwen3AsrModel {
-    const ALL: &'static [Self] = &[Self::Large, Self::LargeQ4, Self::Small, Self::SmallQ4];
+    const ALL: &'static [Self] = &[Self::Large, Self::SmallQ4];
 
     /// Best first.
     pub const fn all() -> &'static [Self] {
@@ -100,8 +84,6 @@ impl Qwen3AsrModel {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Large => "qwen3-asr-1.7b",
-            Self::LargeQ4 => "qwen3-asr-1.7b-q4",
-            Self::Small => "qwen3-asr-0.6b",
             Self::SmallQ4 => "qwen3-asr-0.6b-q4",
         }
     }
@@ -109,8 +91,6 @@ impl Qwen3AsrModel {
     pub const fn display_name(self) -> &'static str {
         match self {
             Self::Large => "Qwen3-ASR 1.7B, 8-bit",
-            Self::LargeQ4 => "Qwen3-ASR 1.7B, 4-bit",
-            Self::Small => "Qwen3-ASR 0.6B, 8-bit",
             Self::SmallQ4 => "Qwen3-ASR 0.6B, 4-bit",
         }
     }
@@ -118,9 +98,7 @@ impl Qwen3AsrModel {
     pub const fn description(self) -> &'static str {
         match self {
             Self::Large => "The most accurate, and the one to take for meetings that mix English and Mandarin.",
-            Self::LargeQ4 => "The big model in two thirds of the space. In our test its transcripts matched the 8-bit model's to 98%, mixed English and Mandarin included.",
-            Self::Small => "Less than half the download and half the memory, and twice as fast. As good on clear English (98%), weaker on a meeting that mixes English and Mandarin (93%).",
-            Self::SmallQ4 => "The smallest and the fastest, which is why ZillaNote starts with it. Against the big model: 98% of the words on clear English, 92% on a meeting that mixes English and Mandarin.",
+            Self::SmallQ4 => "A third of the download, half the memory, twice as fast, which is why ZillaNote starts with it. Against the big model: 98% of the words on clear English, 92% on a meeting that mixes English and Mandarin.",
         }
     }
 
@@ -128,8 +106,6 @@ impl Qwen3AsrModel {
     pub const fn downloads(self) -> [Qwen3AsrDownload; 2] {
         match self {
             Self::Large => [LARGE_Q8, LARGE_MMPROJ],
-            Self::LargeQ4 => [LARGE_Q4, LARGE_MMPROJ],
-            Self::Small => [SMALL_Q8, SMALL_MMPROJ],
             Self::SmallQ4 => [SMALL_Q4, SMALL_MMPROJ],
         }
     }
@@ -144,17 +120,15 @@ impl Qwen3AsrModel {
     pub const fn memory_bytes(self) -> u64 {
         match self {
             Self::Large => 3_500_000_000,
-            Self::LargeQ4 => 2_600_000_000,
-            Self::Small => 1_850_000_000,
             Self::SmallQ4 => 1_550_000_000,
         }
     }
 
-    /// Both precisions of a size share a folder, and the audio encoder in it.
+    /// One folder per size, named as before, so files an earlier version put there are found.
     pub fn install_dir(self, models_base: &Path) -> PathBuf {
         let family = match self {
-            Self::Large | Self::LargeQ4 => "qwen3-asr-1.7b",
-            Self::Small | Self::SmallQ4 => "qwen3-asr-0.6b",
+            Self::Large => "qwen3-asr-1.7b",
+            Self::SmallQ4 => "qwen3-asr-0.6b",
         };
         models_base.join("qwen3-asr").join(family)
     }
@@ -163,8 +137,8 @@ impl Qwen3AsrModel {
     /// LM Studio keeps the same files in, under their publishers' names.
     fn search_dirs(self, models_base: &Path) -> Vec<PathBuf> {
         let size = match self {
-            Self::Large | Self::LargeQ4 => "Qwen3-ASR-1.7B-GGUF",
-            Self::Small | Self::SmallQ4 => "Qwen3-ASR-0.6B-GGUF",
+            Self::Large => "Qwen3-ASR-1.7B-GGUF",
+            Self::SmallQ4 => "Qwen3-ASR-0.6B-GGUF",
         };
         let mut dirs = vec![self.install_dir(models_base)];
         for lm_studio in lm_studio_models_dirs() {
@@ -227,6 +201,15 @@ mod tests {
     }
 
     #[test]
+    fn the_two_choices_of_earlier_versions_are_read_as_the_nearest_of_todays() {
+        let read = |id: &str| serde_json::from_str::<Qwen3AsrModel>(&format!("\"{id}\"")).unwrap();
+        assert_eq!(read("qwen3-asr-1.7b-q4"), Qwen3AsrModel::Large, "1.7B at 4 bits: the big model");
+        assert_eq!(read("qwen3-asr-0.6b"), Qwen3AsrModel::SmallQ4, "0.6B at 8 bits: the small model");
+        assert_eq!("qwen3-asr-1.7b-q4".parse::<Qwen3AsrModel>().unwrap(), Qwen3AsrModel::Large);
+        assert_eq!(Qwen3AsrModel::Large.to_string(), "qwen3-asr-1.7b", "and are written back as today's id");
+    }
+
+    #[test]
     fn every_file_is_pinned_to_a_revision_with_its_size_and_checksum() {
         for model in Qwen3AsrModel::all() {
             for file in model.downloads() {
@@ -247,31 +230,31 @@ mod tests {
     }
 
     #[test]
-    fn both_precisions_of_a_size_share_the_audio_encoder() {
+    fn a_model_needs_both_of_its_files_and_the_folder_is_named_by_size() {
         let dir = tempfile::tempdir().unwrap();
-        let folder = Qwen3AsrModel::LargeQ4.install_dir(dir.path());
-        assert_eq!(folder, Qwen3AsrModel::Large.install_dir(dir.path()));
-        let [model, mmproj] = Qwen3AsrModel::LargeQ4.downloads();
+        let folder = Qwen3AsrModel::Large.install_dir(dir.path());
+        assert!(folder.ends_with("qwen3-asr/qwen3-asr-1.7b"), "where an earlier version put the files");
+        let [model, mmproj] = Qwen3AsrModel::Large.downloads();
         let dirs = [folder.clone()];
 
         touch(&folder.join(mmproj.file_name));
-        assert_eq!(Qwen3AsrModel::LargeQ4.locate_files_in(&dirs), None);
+        assert_eq!(Qwen3AsrModel::Large.locate_files_in(&dirs), None, "the audio encoder alone is not enough");
         touch(&folder.join(model.file_name));
 
-        let files = Qwen3AsrModel::LargeQ4.locate_files_in(&dirs).unwrap();
+        let files = Qwen3AsrModel::Large.locate_files_in(&dirs).unwrap();
         assert_eq!((files.model, files.mmproj), (folder.join(model.file_name), folder.join(mmproj.file_name)));
-        assert_eq!(Qwen3AsrModel::Large.locate_files_in(&dirs), None, "its own model file is not there");
+        assert_eq!(Qwen3AsrModel::SmallQ4.locate_files_in(&dirs), None, "the small model's files are not there");
     }
 
     #[test]
     fn a_file_found_anywhere_is_not_asked_for_again() {
         let dir = tempfile::tempdir().unwrap();
         let (ours, lm_studio) = (dir.path().join("ours"), dir.path().join("lm-studio"));
-        let [model, mmproj] = Qwen3AsrModel::Small.downloads();
+        let [model, mmproj] = Qwen3AsrModel::SmallQ4.downloads();
         touch(&lm_studio.join(mmproj.file_name));
         touch(&ours.join(model.file_name));
 
-        let files = Qwen3AsrModel::Small.locate_files_in(&[ours.clone(), lm_studio.clone()]).unwrap();
+        let files = Qwen3AsrModel::SmallQ4.locate_files_in(&[ours.clone(), lm_studio.clone()]).unwrap();
 
         assert_eq!((files.model, files.mmproj), (ours.join(model.file_name), lm_studio.join(mmproj.file_name)));
     }

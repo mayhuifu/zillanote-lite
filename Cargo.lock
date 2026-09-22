@@ -947,6 +947,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "tracing",
+ "windows 0.61.3",
  "wiremock",
 ]
 
@@ -6387,7 +6388,7 @@ dependencies = [
 
 [[package]]
 name = "zillanote"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "chrono",
  "engine",

@@ -1,6 +1,7 @@
 //! The whole product minus the window: record, chunk, transcribe, write minutes, store.
 
 pub mod audio;
+pub mod calls;
 pub mod chunker;
 pub mod download;
 pub mod email;

@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use engine::calls::{CallState, CallWatch};
 use engine::download::{self, Retry};
 use engine::pipeline::{Pipeline, Readiness};
 use engine::recorder::Recording;
@@ -23,6 +24,9 @@ const RECORDING_CHANGED: &str = "recording-changed";
 const NOTICE: &str = "notice";
 /// Carries a [`DownloadStatus`] while the models are fetched, and once more at the end.
 const DOWNLOAD_PROGRESS: &str = "download-progress";
+/// Carries a [`CallState`] whenever it changes: a call program opened the microphone, let
+/// it go, or the countdown to the end of the recording moved on.
+const CALL_STATE: &str = "call-state";
 
 /// The Quit of the menu at the top of the screen (the menu-bar icon has a Quit of its own).
 const APP_QUIT: &str = "app-quit";
@@ -43,6 +47,10 @@ struct App {
     download: Arc<Download>,
     /// The menu-bar item that starts and stops a recording, so its words can follow.
     record_item: MenuItem<tauri::Wry>,
+    /// Who else holds the microphone, read once a second by [`watch_calls`].
+    calls: Mutex<CallWatch>,
+    /// What the windows were last told about calls, for a window that opens later.
+    call_state: Mutex<CallState>,
 }
 
 #[derive(Default)]
@@ -215,6 +223,85 @@ fn stop_and(app: &AppHandle, process: bool) -> Result<Meeting, String> {
 #[tauri::command]
 fn app_version() -> &'static str {
     env!("CARGO_PKG_VERSION")
+}
+
+/// Once a second: who holds the microphone, and what follows from it. A call program
+/// opening it makes the bar flash; one letting it go during a recording starts a countdown
+/// at whose end the recording stops as if the button had been pressed.
+fn watch_calls(app: AppHandle) {
+    let mut last_users = Vec::new();
+    loop {
+        std::thread::sleep(Duration::from_secs(1));
+        let state = app.state::<App>();
+        let settings = state.store().settings_without_secrets();
+        let users = if settings.notice_calls || settings.stop_when_call_ends {
+            engine::calls::microphone_users()
+        } else {
+            Vec::new()
+        };
+        if users != last_users {
+            tracing::info!(holding = ?users.iter().map(|user| &user.name).collect::<Vec<_>>(), "microphone_holders");
+            last_users = users.clone();
+        }
+        let recording = state.active.lock().map(|active| active.is_some()).unwrap_or(false);
+        let tick = match state.calls.lock() {
+            Ok(mut calls) => calls.observe(Instant::now(), &users, recording, settings.stop_when_call_ends),
+            Err(_) => continue,
+        };
+        let mut shown = tick.state;
+        if !settings.notice_calls && shown.ending_in.is_none() {
+            shown.app = None;
+        }
+        if tick.stop {
+            let app_name = last_call_name(&state).unwrap_or_else(|| "The call".to_string());
+            match stop(&app) {
+                Ok(_) => {
+                    tracing::info!(call = %app_name, "recording_stopped_after_call");
+                    let _ = app.emit(NOTICE, format!("Recording stopped: the {app_name} call ended."));
+                }
+                Err(error) => tracing::warn!(%error, "recording_stop_after_call_failed"),
+            }
+        }
+        let changed = state.call_state.lock().map(|mut held| {
+            let changed = *held != shown;
+            if changed {
+                if held.app.is_none() && shown.app.is_some() {
+                    tracing::info!(call = shown.app.as_deref().unwrap_or(""), "call_started");
+                } else if held.app.is_some() && shown.app.is_none() && !tick.stop {
+                    tracing::info!(call = held.app.as_deref().unwrap_or(""), "call_over");
+                }
+                *held = shown.clone();
+            }
+            changed
+        });
+        if changed.unwrap_or(false) {
+            let _ = app.emit(CALL_STATE, &shown);
+        }
+    }
+}
+
+/// The name the countdown was shown under, for the notice when it runs out.
+fn last_call_name(state: &App) -> Option<String> {
+    state.call_state.lock().ok()?.app.clone()
+}
+
+/// What the windows show about calls right now, for a window that opens later.
+#[tauri::command]
+fn call_state(state: State<'_, App>) -> CallState {
+    state.call_state.lock().map(|held| held.clone()).unwrap_or_default()
+}
+
+/// The user wants the recording to go on although the call ended.
+#[tauri::command]
+fn keep_recording(app: AppHandle, state: State<'_, App>) -> Result<(), String> {
+    state.calls.lock().map_err(|e| e.to_string())?.keep();
+    let shown = CallState::default();
+    if let Ok(mut held) = state.call_state.lock() {
+        *held = shown.clone();
+    }
+    tracing::info!("recording_kept_after_call");
+    let _ = app.emit(CALL_STATE, &shown);
+    Ok(())
 }
 
 #[tauri::command]
@@ -798,8 +885,14 @@ fn main() {
                 jobs: Arc::new(tokio::sync::Mutex::new(())),
                 download: Arc::default(),
                 record_item,
+                calls: Mutex::new(CallWatch::new()),
+                call_state: Mutex::default(),
             });
             place_mini(app.handle());
+            std::thread::spawn({
+                let app = app.handle().clone();
+                move || watch_calls(app)
+            });
             // Meetings whose minutes were cut short by the last exit get them now.
             let state = app.state::<App>();
             if state.store().settings().auto_minutes {
@@ -840,6 +933,8 @@ fn main() {
             show_main,
             show_mini,
             ui_ready,
+            call_state,
+            keep_recording,
             send_minutes,
             send_test_email,
             open_system_audio_settings,

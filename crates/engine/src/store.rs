@@ -84,6 +84,10 @@ pub struct Settings {
     pub record_system_audio: bool,
     /// Write the minutes as soon as the transcript is ready, without being asked.
     pub auto_minutes: bool,
+    /// Make the record button flash when a call program opens the microphone.
+    pub notice_calls: bool,
+    /// Stop the recording half a minute after the call program lets the microphone go.
+    pub stop_when_call_ends: bool,
     /// Which of the speech models transcribes.
     pub asr_model: qwen3_asr::Qwen3AsrModel,
 }
@@ -102,6 +106,8 @@ impl Default for Settings {
             email: EmailSettings::default(),
             record_system_audio: true,
             auto_minutes: true,
+            notice_calls: true,
+            stop_when_call_ends: true,
             asr_model: qwen3_asr::Qwen3AsrModel::default(),
         }
     }
@@ -188,6 +194,15 @@ impl Store {
     }
 
     /// What `settings.json` itself holds, secrets kept elsewhere left out.
+    /// The settings without their secrets, which never asks the keychain: for something that
+    /// looks at a switch every second.
+    pub fn settings_without_secrets(&self) -> Settings {
+        let mut settings = self.settings_on_disk();
+        settings.llm_api_key.clear();
+        settings.email.password.clear();
+        settings
+    }
+
     fn settings_on_disk(&self) -> Settings {
         std::fs::read_to_string(self.root.join("settings.json"))
             .ok()

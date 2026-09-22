@@ -5,11 +5,12 @@ background, on this machine except for the language model you choose.
 
 - **Speech to text:** Qwen3-ASR through a bundled `llama-server`, started only while a
   recording is being transcribed (memory for that time only, none when idle). Settings
-  offers four models, each with its download size, the time that takes on this connection
+  offers two models, each with its download size, the time that takes on this connection
   (measured, not guessed) and the memory it needs: 1.7B at 8 bits (the most accurate, and the
-  one for meetings that mix English and Mandarin), 1.7B at 4 bits, 0.6B at 8 bits and 0.6B at
-  4 bits (the default: a 0.9 GB download and 1.6 GB of memory while transcribing). Both
-  precisions of a size share one audio encoder, so switching costs one file.
+  one for meetings that mix English and Mandarin; 2.8 GB to download, 3.5 GB of memory) and
+  0.6B at 4 bits (the default: a 0.9 GB download and 1.6 GB of memory while transcribing).
+  Settings that name one of the two in-between choices of earlier versions are read as the
+  nearest of these.
 - **Minutes:** any OpenAI-compatible endpoint (LM Studio, Ollama, or a hosted API with a key).
   The system prompt, editable in Settings (its default is in
   [`docs/default-system-prompt.md`](docs/default-system-prompt.md)), holds the rules and,
@@ -29,6 +30,16 @@ background, on this machine except for the language model you choose.
   without either, the microphone is recorded alone. On loudspeakers the microphone hears the
   other side a second time: that echo is found by how the two channels' loudness moves
   together and left out of what is transcribed. It can be turned off in Settings.
+- **When a call starts and ends:** the system says which programs have the microphone
+  open, and every call program (Teams, Zoom, Tencent Meeting, a browser on Meet) holds it
+  for exactly as long as the call. So when one opens the microphone, the bar's record button flashes and the
+  window says "Meeting starts"; and when it lets go during a recording, the recording
+  stops half a minute later as if the button had been pressed, after a countdown in the
+  bar's timer and in the window, with "Keep recording" a click away. A program counts as a
+  call only after a minute with the microphone, so dictation and voice messages change
+  nothing; a program that opens it again within the half minute (a reconnect, the next
+  meeting) is the call going on. Nothing is installed and no permission is asked; both are
+  switches in Settings. Nothing ever starts a recording by itself.
 - **Speakers:** before transcribing, the recording is searched for who spoke when (pyannote
   segmentation and WeSpeaker embeddings on ONNX Runtime, all on this Mac), and the
   recognizer's chunks are cut where the speaker changes, so every line of the transcript has
@@ -119,6 +130,8 @@ administrator needed) is kept with the run and attached to a tag's release.
 
 - The computer's sound comes through WASAPI loopback, so the far side of a call is recorded
   as on the Mac, without a permission question.
+- Who has the microphone open is read from the audio sessions of every microphone, so the
+  flashing button and the stop after a call work the same; only checked by the build so far.
 - The speech engine is llama.cpp's CPU build for Windows, fetched by the same script.
 - The bar is the 38 by 142 points it is on the Mac. Windows has a smallest width of its own
   for a window, several times that; the app overrides it for the bar at start, and the job
@@ -141,6 +154,7 @@ ZILLANOTE_SPEAKER_MODELS=<folder> ZILLANOTE_TEST_AUDIO=/path/to.wav \
 cargo test -p engine live_keychain -- --ignored --nocapture     # a throwaway item in the login keychain
 cargo test -p engine live_download -- --ignored --nocapture     # fetches the speaker models (32 MB) and checks them
 cargo test -p engine live_system_audio -- --ignored --nocapture   # plays a sound, expects to hear it in the tap
+cargo test -p engine live_microphone_users -- --ignored --nocapture   # prints who holds the microphone, ten seconds long
 cargo test -p engine live_recording -- --ignored --nocapture      # plays 8 s of noise, records both channels
 ```
 

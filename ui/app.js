@@ -52,19 +52,37 @@ function when(meeting) {
 
 // --- recorder ---
 
+let callState = { app: null, ending_in: null }; // who is on a call, and the countdown
+
 function renderRecorder() {
   const button = $("record");
   const on = recording !== null;
+  const starting = !on && callState.app !== null && callState.ending_in === null;
+  const ending = on && callState.ending_in !== null;
   button.classList.toggle("recording", on);
+  button.classList.toggle("call", starting);
   button.setAttribute("aria-label", on ? "Stop recording" : "Start recording");
   $("hint").textContent = on
     ? "Recording. Click to stop; the rest happens in the background."
     : "Click to start recording";
+  const box = $("call");
+  box.hidden = !(starting || ending);
+  box.classList.toggle("ending", ending);
+  if (starting) {
+    $("call-title").textContent = "Meeting starts";
+    $("call-text").textContent = `${callState.app} has opened the microphone.`;
+  } else if (ending) {
+    $("call-title").textContent = `The ${callState.app} call ended.`;
+    $("call-text").textContent = `Recording stops in ${callState.ending_in} s.`;
+  }
+  $("keep").hidden = !ending;
   if (!on) {
     $("timer").textContent = "00:00";
     button.style.removeProperty("--level");
   }
 }
+
+$("keep").addEventListener("click", () => call("keep_recording"));
 
 setInterval(() => {
   if (recording) $("timer").textContent = clock((Date.now() - recording.startedAt) / 1000);
@@ -425,6 +443,8 @@ $("open-settings").addEventListener("click", async () => {
   $("system-prompt").value = settings.system_prompt;
   $("vocabulary").value = settings.vocabulary.join("\n");
   $("system-audio").checked = settings.record_system_audio;
+  $("notice-calls").checked = settings.notice_calls;
+  $("stop-after-call").checked = settings.stop_when_call_ends;
   $("auto-minutes").checked = settings.auto_minutes;
   $("email-to").value = settings.email.to;
   $("email-from").value = settings.email.from;
@@ -457,6 +477,8 @@ function readSettings() {
     vocabulary: $("vocabulary").value.split("\n").map((term) => term.trim()).filter(Boolean),
     max_chars_per_call: Number($("settings").dataset.maxChars) || 24000,
     record_system_audio: $("system-audio").checked,
+    notice_calls: $("notice-calls").checked,
+    stop_when_call_ends: $("stop-after-call").checked,
     auto_minutes: $("auto-minutes").checked,
     asr_model: document.querySelector('input[name="asr-model"]:checked')?.value,
     email: {
@@ -518,6 +540,10 @@ await listen("recording-changed", (event) => {
   renderRecorder();
 });
 await listen("notice", (event) => toast(event.payload));
+await listen("call-state", (event) => {
+  callState = event.payload;
+  renderRecorder();
+});
 await listen("tauri://drag-drop", async (event) => {
   // One file that is no recording does not stop the others; `call` has shown why.
   for (const path of event.payload.paths || []) await importRecording(path).catch(() => {});
@@ -545,6 +571,7 @@ const current = await call("recording_state");
 if (current) {
   recording = { meetingId: current.meeting_id, startedAt: Date.now() - current.elapsed_seconds * 1000 };
 }
+callState = (await call("call_state")) || callState;
 renderRecorder();
 renderList();
 showReadiness();

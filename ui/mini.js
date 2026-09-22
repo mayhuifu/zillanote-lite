@@ -6,22 +6,40 @@ const bars = [...$("meter").children];
 const WEIGHTS = [0.45, 0.8, 1, 0.7, 0.5];
 
 let recording = null; // { startedAt }
+let callState = { app: null, ending_in: null }; // who is on a call, and the countdown
 let doneTimer;
 
 function render() {
   const on = recording !== null;
+  // A call program has the microphone and nothing is being recorded: the button flashes.
+  const starting = !on && callState.app !== null && callState.ending_in === null;
+  // The call ended while recording: the timer counts down, and a click on it keeps recording.
+  const ending = on && callState.ending_in !== null;
   bar.classList.toggle("recording", on);
-  $("record").title = on ? "Stop recording" : "Start recording";
+  bar.classList.toggle("call", starting);
+  bar.classList.toggle("ending", ending);
+  $("record").title = on ? "Stop recording" : starting ? `Start recording (${callState.app} is on a call)` : "Start recording";
   $("record").setAttribute("aria-label", $("record").title);
+  $("timer").title = ending ? `The ${callState.app} call ended. Click to keep recording.` : "";
+  $("timer").toggleAttribute("data-tauri-drag-region", !ending);
   if (!on) {
     $("timer").textContent = "";
     bars.forEach((el) => (el.style.height = "3px"));
   }
+  tick();
 }
 
-setInterval(() => {
-  if (recording) $("timer").textContent = clock((Date.now() - recording.startedAt) / 1000);
-}, 500);
+function tick() {
+  if (!recording) return;
+  const ending = callState.ending_in !== null;
+  $("timer").textContent = ending ? clock(callState.ending_in) : clock((Date.now() - recording.startedAt) / 1000);
+}
+
+setInterval(tick, 500);
+
+$("timer").addEventListener("click", () => {
+  if (recording && callState.ending_in !== null) invoke("keep_recording").catch(() => {});
+});
 
 $("record").addEventListener("click", async () => {
   $("record").disabled = true;
@@ -54,6 +72,11 @@ await listen("recording-changed", (event) => {
   render();
 });
 
+await listen("call-state", (event) => {
+  callState = event.payload;
+  render();
+});
+
 await listen("recording-level", (event) => {
   if (!recording) return;
   // Speech sits around 0.02 to 0.2 RMS; spread that over the bar heights.
@@ -80,6 +103,7 @@ await listen("meeting-updated", (event) => {
 
 const current = await invoke("recording_state");
 if (current) recording = { startedAt: Date.now() - current.elapsed_seconds * 1000 };
+callState = await invoke("call_state").catch(() => callState);
 render();
 $("quit").addEventListener("click", () => invoke("quit_app"));
 invoke("ui_ready");

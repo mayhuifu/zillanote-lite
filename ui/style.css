@@ -79,6 +79,17 @@ button.primary { background: var(--brand-fill); color: #fff; border-color: var(-
 .record.recording .dot { background: radial-gradient(circle at 36% 30%, var(--graphite-light), var(--graphite) 55%, var(--graphite-deep)); box-shadow: 0 6px 18px rgba(20, 20, 30, 0.35); }
 .record.recording .dot::after { inset: 27px; }
 .record:disabled .dot { background: var(--muted); box-shadow: none; }
+/* A call program has opened the microphone and nothing is recorded: the halo breathes. */
+.record.call .ring { animation: call 1.4s ease-in-out infinite; }
+@keyframes call {
+  0%, 100% { transform: scale(0.82); background: var(--brand-soft); }
+  50% { transform: scale(1); background: var(--brand-halo); }
+}
+.call-note { max-width: calc(100% - 32px); margin-top: 12px; padding: 8px 14px; border-radius: 10px; background: var(--brand-soft); font-size: 13px; text-align: center; display: flex; gap: 4px 10px; align-items: center; justify-content: center; flex-wrap: wrap; }
+.call-note strong { color: var(--brand); }
+.call-note.ending { background: var(--accent-soft); }
+.call-note.ending strong { color: var(--accent); }
+.call-note button.text { color: var(--brand); font-weight: 600; padding: 4px 8px; }
 .timer { font-size: 30px; font-variant-numeric: tabular-nums; font-weight: 300; margin-top: 12px; color: var(--muted); }
 .recording ~ .timer { color: var(--text); }
 .hint { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
