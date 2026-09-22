@@ -2,6 +2,8 @@
 name = "engine"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
 qwen3-asr = { workspace = true }

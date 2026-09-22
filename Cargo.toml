@@ -2,6 +2,10 @@
 resolver = "2"
 members = ["crates/qwen3-asr", "crates/speakers", "crates/engine", "app"]
 
+[workspace.package]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/mayhuifu/zillanote-lite"
+
 [workspace.dependencies]
 qwen3-asr = { path = "crates/qwen3-asr" }
 engine = { path = "crates/engine" }

@@ -41,13 +41,13 @@ background, on this machine except for the language model you choose.
   meeting) is the call going on. Nothing is installed and no permission is asked; both are
   switches in Settings. Nothing ever starts a recording by itself.
 - **Speakers:** before transcribing, the recording is searched for who spoke when (pyannote
-  segmentation and WeSpeaker embeddings on ONNX Runtime, all on this Mac), and the
+  segmentation-3.0 and WeSpeaker's ResNet34 embedding on ONNX Runtime, all on this Mac), and the
   recognizer's chunks are cut where the speaker changes, so every line of the transcript has
   one speaker: "Speaker 1", "Speaker 2". Click a speaker above the transcript to give the
   name; the voice is remembered (`voices.json`) and named by itself in later meetings.
   Recognizing a voice never adds to what is stored about it; only naming does. The two
-  models (32 MB) live in `models/speakers/` of the data folder; without them transcripts
-  simply have no names.
+  models (32 MB, from this project's `speaker-models-1` release) live in `models/speakers/`
+  of the data folder; without them transcripts simply have no names.
 - **Window:** it starts as a small bar (38 by 142 points) that floats at the right edge of
   the screen: logo, level meter, record/stop, a progress ring while a meeting is processed.
   The violet tab at the bottom opens the full window; closing that window (or its down-arrow) goes back to the bar. Drag the
@@ -82,6 +82,16 @@ background, on this machine except for the language model you choose.
 - **Storage:** plain files, one folder per meeting, under
   `~/Library/Application Support/com.zillanote.lite/meetings/`. Next to it, `zillanote.log`
   says what the app did and when, for the day something did not happen.
+
+## Privacy
+
+Audio is recorded to a file on this computer and read by programs on this computer: the
+bundled speech engine and the speaker models. The transcript goes to one place, the
+language-model endpoint set in Settings, which can be a program on this computer (LM Studio,
+Ollama) or a hosted API of your choosing; the minutes go to the mail server set in Settings,
+if any. Model files are downloaded from Hugging Face and GitHub, or their mirrors, and
+checked against pinned checksums. Nothing else leaves the computer, and nothing is sent to
+the authors of ZillaNote.
 
 ## Run
 
@@ -158,6 +168,19 @@ cargo test -p engine live_microphone_users -- --ignored --nocapture   # prints w
 cargo test -p engine live_recording -- --ignored --nocapture      # plays 8 s of noise, records both channels
 ```
 
+## Contributing, security, license
+
+[`CONTRIBUTING.md`](CONTRIBUTING.md) says how to report and how to send changes;
+[`SECURITY.md`](SECURITY.md) says where to report a vulnerability privately.
+
+ZillaNote lite is licensed under either the [MIT License](LICENSE-MIT) or the
+[Apache License 2.0](LICENSE-APACHE), at your option. What it ships with and downloads, and
+the licenses of that, are in [`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md): llama.cpp
+and ONNX Runtime (MIT), DirectML on Windows (Microsoft's terms), the speaker code from
+Anarlog (MIT), and the models: Qwen3-ASR (Apache-2.0), pyannote segmentation-3.0 (MIT) and
+WeSpeaker's ResNet34 embedding as packaged by pyannote (CC BY 4.0). The installer carries
+that file too.
+
 ## Layout
 
 | Path | What |
@@ -168,6 +191,7 @@ cargo test -p engine live_recording -- --ignored --nocapture      # plays 8 s of
 | `app` | the Tauri shell: commands, events, one window |
 | `ui` | two pages (`mini.html` the bar, `index.html` the full window): plain HTML, CSS and JavaScript, no build step |
 | `scripts/make-icon.py` | draws the icon (an ear in violet light on graphite) and the menu-bar mark; `tauri icon` turns the icon into every format |
+| `scripts/third-party-crates.py` | rewrites the crate table at the end of `THIRD-PARTY-NOTICES.md` from `Cargo.lock` |
 
 ## Not built yet
 

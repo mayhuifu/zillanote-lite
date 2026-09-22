@@ -21,43 +21,64 @@ use tokio::io::AsyncWriteExt;
 pub struct DownloadFile {
     pub file_name: &'static str,
     pub url: &'static str,
+    /// Another place that holds the same bytes, tried after the URL and its mirror. Empty
+    /// for none.
+    pub fallback: &'static str,
     pub size_bytes: u64,
     /// SHA-256 of the whole file, in hex.
     pub sha256: &'static str,
 }
 
 impl DownloadFile {
-    /// Where to fetch it from, in order: the pinned URL, then the same path on a mirror.
+    /// Where to fetch it from, in order: the pinned URL, the same path on a mirror, then
+    /// the fallback and its mirror.
     pub fn sources(&self) -> Vec<String> {
-        let mirror = if let Some(path) = self.url.strip_prefix("https://huggingface.co/") {
-            Some(format!("https://hf-mirror.com/{path}"))
-        } else if let Some(path) = self.url.strip_prefix("https://raw.githubusercontent.com/") {
-            // <owner>/<repo>/<commit>/<file> is <owner>/<repo>@<commit>/<file> over there.
-            let mut parts = path.splitn(4, '/');
-            match (parts.next(), parts.next(), parts.next(), parts.next()) {
-                (Some(owner), Some(repo), Some(commit), Some(file)) => {
-                    Some(format!("https://cdn.jsdelivr.net/gh/{owner}/{repo}@{commit}/{file}"))
-                }
-                _ => None,
+        let mut sources = Vec::new();
+        for url in [self.url, self.fallback] {
+            if url.is_empty() {
+                continue;
             }
-        } else {
-            None
-        };
-        std::iter::once(self.url.to_string()).chain(mirror).collect()
+            sources.push(url.to_string());
+            sources.extend(mirror_of(url));
+        }
+        sources
     }
 }
 
-/// From the commit of fastrepl/anarlog that `crates/speakers` was taken from.
+/// The same path on a mirror that is reachable where the original is not.
+fn mirror_of(url: &str) -> Option<String> {
+    if let Some(path) = url.strip_prefix("https://huggingface.co/") {
+        Some(format!("https://hf-mirror.com/{path}"))
+    } else if let Some(path) = url.strip_prefix("https://raw.githubusercontent.com/") {
+        // <owner>/<repo>/<commit>/<file> is <owner>/<repo>@<commit>/<file> over there.
+        let mut parts = path.splitn(4, '/');
+        match (parts.next(), parts.next(), parts.next(), parts.next()) {
+            (Some(owner), Some(repo), Some(commit), Some(file)) => {
+                Some(format!("https://cdn.jsdelivr.net/gh/{owner}/{repo}@{commit}/{file}"))
+            }
+            _ => None,
+        }
+    } else {
+        None
+    }
+}
+
+/// pyannote segmentation-3.0 (MIT) and pyannote's ONNX export of WeSpeaker's ResNet34
+/// speaker embedding (CC BY 4.0), as ONNX files, from this project's own release; the
+/// copies in the commit of fastrepl/anarlog that `crates/speakers` was taken from are the
+/// fallback. The bytes are the same, and the checksum says so.
 pub const SPEAKER_MODELS: &[DownloadFile] = &[
     DownloadFile {
         file_name: "segmentation.onnx",
-        url: "https://raw.githubusercontent.com/fastrepl/anarlog/b9146a707f4da2121d3438bce38155b31e5007f1/crates/pyannote-local/src/data/segmentation.onnx",
+        url: "https://github.com/mayhuifu/zillanote-lite/releases/download/speaker-models-1/segmentation.onnx",
+        fallback: "https://raw.githubusercontent.com/fastrepl/anarlog/b9146a707f4da2121d3438bce38155b31e5007f1/crates/pyannote-local/src/data/segmentation.onnx",
         size_bytes: 5_986_908,
         sha256: "057ee564753071c0b09b5b611648b50ac188d50846bff5f01e9f7bbf1591ea25",
     },
     DownloadFile {
         file_name: "embedding.onnx",
-        url: "https://raw.githubusercontent.com/fastrepl/anarlog/b9146a707f4da2121d3438bce38155b31e5007f1/crates/embedding/src/onnx/embedding.onnx",
+        url: "https://github.com/mayhuifu/zillanote-lite/releases/download/speaker-models-1/embedding.onnx",
+        fallback: "https://raw.githubusercontent.com/fastrepl/anarlog/b9146a707f4da2121d3438bce38155b31e5007f1/crates/embedding/src/onnx/embedding.onnx",
         size_bytes: 26_543_975,
         sha256: "841645a9b5109369858ca89695e8b23ecfd4486b30bdd5cb3f99fef8d1c29205",
     },
@@ -65,6 +86,7 @@ pub const SPEAKER_MODELS: &[DownloadFile] = &[
 
 fn as_download(file: qwen3_asr::Qwen3AsrDownload) -> DownloadFile {
     DownloadFile {
+        fallback: "",
         file_name: file.file_name,
         url: file.url,
         size_bytes: file.size_bytes,
@@ -392,6 +414,7 @@ mod tests {
         DownloadFile {
             file_name: "weights.gguf",
             url: Box::leak(format!("{}/weights.gguf", server.uri()).into_boxed_str()),
+            fallback: "",
             size_bytes: WEIGHTS.len() as u64,
             sha256,
         }
@@ -582,12 +605,16 @@ mod tests {
     }
 
     #[test]
-    fn every_pinned_file_has_a_mirror_of_the_same_path() {
+    fn every_pinned_file_has_a_mirror_of_the_same_path_and_the_speaker_models_a_fallback() {
         let model = as_download(Qwen3AsrModel::Large.downloads()[0]);
-        assert_eq!(model.sources()[1], model.url.replace("huggingface.co", "hf-mirror.com"));
+        assert_eq!(model.sources(), [model.url.to_string(), model.url.replace("huggingface.co", "hf-mirror.com")]);
         assert_eq!(
-            SPEAKER_MODELS[0].sources()[1],
-            "https://cdn.jsdelivr.net/gh/fastrepl/anarlog@b9146a707f4da2121d3438bce38155b31e5007f1/crates/pyannote-local/src/data/segmentation.onnx"
+            SPEAKER_MODELS[0].sources(),
+            [
+                "https://github.com/mayhuifu/zillanote-lite/releases/download/speaker-models-1/segmentation.onnx",
+                "https://raw.githubusercontent.com/fastrepl/anarlog/b9146a707f4da2121d3438bce38155b31e5007f1/crates/pyannote-local/src/data/segmentation.onnx",
+                "https://cdn.jsdelivr.net/gh/fastrepl/anarlog@b9146a707f4da2121d3438bce38155b31e5007f1/crates/pyannote-local/src/data/segmentation.onnx",
+            ]
         );
     }
 
