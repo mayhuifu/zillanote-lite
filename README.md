@@ -1,5 +1,9 @@
 # ZillaNote (lite)
 
+<p align="center">
+  <img src="docs/hero.png" width="640" alt="ZillaNote. Meet. Listen. Done. Your recordings stay on your computer. The floating bar, idle and recording, next to the window with its record button and the list of meetings. Local ASR: transcribe on your device. Local or cloud LLM: choose your model, control your costs. Automatic email: meeting minutes delivered to your inbox. Your system prompt: set the format, focus and tone.">
+</p>
+
 Record a meeting, get minutes. One big button; transcription and minutes happen in the
 background, on this machine except for the language model you choose.
 
