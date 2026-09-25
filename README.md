@@ -23,6 +23,7 @@
 <p align="center">
   <a href="https://github.com/mayhuifu/zillanote-lite/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/mayhuifu/zillanote-lite?label=version&color=4a31a6"></a>
   <a href="#free-and-open-source"><img alt="License: MIT or Apache-2.0" src="https://img.shields.io/badge/license-MIT%20or%20Apache--2.0-4a31a6"></a>
+  <a href="https://github.com/mayhuifu/zillanote-lite"><img alt="Star on GitHub" src="https://img.shields.io/badge/Star_on_GitHub-%E2%98%85-4a31a6?logo=github&logoColor=white"></a>
 </p>
 
 ZillaNote sits as a small bar at the edge of your screen. Press record when the meeting
