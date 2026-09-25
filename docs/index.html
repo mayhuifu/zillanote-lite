@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#1b1b20">
 <title>ZillaNote</title>
 <meta name="description" content="Record a meeting, get the minutes in your inbox. Transcribed on your own computer. Free and open source, for Mac and Windows.">
 <meta property="og:title" content="ZillaNote: meeting minutes, written on your computer">
@@ -15,33 +16,19 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;600;800&display=swap" rel="stylesheet">
 <style>
+  /* Always dark, whatever the visitor's system is set to: the graphite of the app's bar. */
   :root {
-    --paper: #f4f4f6;
-    --surface: #ffffff;
-    --ink: #232329;
-    --slate: #5d5d6a;
-    --line: #e2e2e8;
-    --violet: #6a4bd4;
-    --halo: rgba(155, 133, 238, 0.28);
-    --pill: #232329;
+    --paper: #1b1b20;
+    --surface: #232329;
+    --ink: #ededf2;
+    --slate: #a6a6b3;
+    --line: #34343d;
+    --violet: #9b85ee;
+    --halo: rgba(155, 133, 238, 0.32);
+    --pill: #2e2e37;
     --pill-ink: #ffffff;
-    --wash: #e6e0fb;
-    color-scheme: light;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --paper: #1b1b20;
-      --surface: #232329;
-      --ink: #ededf2;
-      --slate: #a6a6b3;
-      --line: #34343d;
-      --violet: #9b85ee;
-      --halo: rgba(155, 133, 238, 0.32);
-      --pill: #2e2e37;
-      --pill-ink: #ffffff;
-      --wash: #26213d;
-      color-scheme: dark;
-    }
+    --wash: #26213d;
+    color-scheme: dark;
   }
 
   * { box-sizing: border-box; }
