@@ -6,7 +6,7 @@ Issues and pull requests are welcome. A few things make them easy to take in.
   system, what you did, what happened, and the lines from `zillanote.log` (next to the
   meetings folder) around that time. Recordings and transcripts stay with you; describe
   them instead.
-- **Build and test** as the README says: `cargo test`, `node --test ui/tests/*.mjs`, and
+- **Build and test** as [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) says: `cargo test`, `node --test ui/tests/*.mjs`, and
   the live tests when you touched what they cover. The Windows build job runs on a push to
   the `windows-port` branch of a fork with Actions enabled.
 - **Keep the style of what is there:** comments that say why, names that say what, no
