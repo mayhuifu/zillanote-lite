@@ -1,0 +1,380 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ZillaNote</title>
+<meta name="description" content="Record a meeting, get the minutes in your inbox. Transcribed on your own computer. Free and open source, for Mac and Windows.">
+<meta property="og:title" content="ZillaNote: meeting minutes, written on your computer">
+<meta property="og:description" content="Record a meeting, get the minutes in your inbox. Free and open source, for Mac and Windows.">
+<meta property="og:image" content="https://mayhuifu.github.io/zillanote-lite/hero.png">
+<meta property="og:url" content="https://mayhuifu.github.io/zillanote-lite/">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="icon" href="favicon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;600;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --paper: #f4f4f6;
+    --surface: #ffffff;
+    --ink: #232329;
+    --slate: #5d5d6a;
+    --line: #e2e2e8;
+    --violet: #6a4bd4;
+    --halo: rgba(155, 133, 238, 0.28);
+    --pill: #232329;
+    --pill-ink: #ffffff;
+    --wash: #e6e0fb;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #1b1b20;
+      --surface: #232329;
+      --ink: #ededf2;
+      --slate: #a6a6b3;
+      --line: #34343d;
+      --violet: #9b85ee;
+      --halo: rgba(155, 133, 238, 0.32);
+      --pill: #2e2e37;
+      --pill-ink: #ffffff;
+      --wash: #26213d;
+      color-scheme: dark;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font: 400 1.0625rem/1.6 "Onest", system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: var(--violet); text-underline-offset: 0.18em; }
+  a:focus-visible, button:focus-visible { outline: 3px solid var(--violet); outline-offset: 3px; border-radius: 6px; }
+  img { max-width: 100%; height: auto; display: block; }
+
+  .wrap { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
+
+  header .wrap { display: flex; align-items: center; justify-content: space-between; height: 72px; }
+  .brand { display: flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; font-weight: 800; font-size: 1.125rem; letter-spacing: -0.01em; }
+  .brand img { width: 32px; height: 32px; border-radius: 8px; }
+  header nav a { color: var(--ink); text-decoration: none; font-weight: 600; font-size: 0.9375rem; }
+  header nav a:hover { color: var(--violet); }
+
+  .hero .wrap {
+    display: grid;
+    grid-template-columns: minmax(0, 5fr) minmax(0, 6fr);
+    gap: 56px;
+    align-items: center;
+    padding-top: 40px;
+    padding-bottom: 88px;
+  }
+  h1 {
+    margin: 0 0 20px;
+    font-weight: 800;
+    font-size: clamp(2.75rem, 6.4vw, 5rem);
+    line-height: 0.98;
+    letter-spacing: -0.04em;
+  }
+  .lead { margin: 0 0 36px; max-width: 30em; font-size: 1.1875rem; color: var(--slate); }
+
+  /* The download is the app's record button: a graphite pill carrying the violet sphere. */
+  .get {
+    display: inline-flex;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 28px 12px 12px;
+    border-radius: 24px;
+    background: var(--pill);
+    color: var(--pill-ink);
+    text-decoration: none;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.06) inset, 0 10px 30px -12px rgba(35, 35, 41, 0.55);
+  }
+  .sphere {
+    flex: none;
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: radial-gradient(circle at 34% 28%, #d3c2ff 0%, #a878f2 30%, #7a35d1 78%, #5b25a8 100%);
+    box-shadow: 0 0 0 6px var(--halo);
+    transition: box-shadow 220ms ease;
+  }
+  .get:hover .sphere, .get:focus-visible .sphere { box-shadow: 0 0 0 11px var(--halo); }
+  .get:focus-visible { outline: 3px solid var(--violet); outline-offset: 4px; border-radius: 24px; }
+  .get span { display: block; }
+  .get .what { font-weight: 600; font-size: 1.1875rem; line-height: 1.25; }
+  .get .needs { font-size: 0.8125rem; opacity: 0.72; line-height: 1.4; }
+
+  .choices { display: flex; flex-wrap: wrap; gap: 14px; }
+  .also { margin: 18px 0 0; font-size: 0.9375rem; color: var(--slate); }
+  .also a { font-weight: 600; margin-right: 18px; white-space: nowrap; display: inline-block; }
+  .version { margin: 10px 0 0; font-size: 0.875rem; color: var(--slate); }
+  .elsewhere { margin: 0 0 20px; font-weight: 600; }
+
+  .next {
+    margin: 22px 0 0;
+    padding: 14px 18px;
+    max-width: 32em;
+    border-left: 3px solid var(--violet);
+    background: var(--surface);
+    border-radius: 0 12px 12px 0;
+    font-size: 0.9375rem;
+  }
+  .next strong { font-weight: 600; }
+  .caution { margin: 14px 0 0; font-size: 0.9375rem; color: var(--slate); max-width: 32em; }
+
+  .shot img { border-radius: 20px; box-shadow: 0 1px 0 var(--line), 0 28px 64px -32px rgba(40, 20, 110, 0.5); }
+
+  section.band { border-top: 1px solid var(--line); }
+  section.band .wrap { padding-top: 64px; padding-bottom: 64px; }
+  h2 { margin: 0 0 28px; font-size: 1.625rem; font-weight: 800; letter-spacing: -0.02em; line-height: 1.2; }
+
+  .gains { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 32px 56px; max-width: 920px; }
+  .gains h3 { margin: 0 0 6px; font-size: 1.125rem; font-weight: 600; }
+  .gains p { margin: 0; color: var(--slate); }
+
+  ol.steps { list-style: none; margin: 0; padding: 0; counter-reset: step; max-width: 720px; }
+  ol.steps li { counter-increment: step; position: relative; padding: 0 0 26px 56px; }
+  ol.steps li::before {
+    content: counter(step);
+    position: absolute;
+    left: 0;
+    top: -2px;
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    font-weight: 800;
+    color: var(--violet);
+    background: var(--wash);
+  }
+  ol.steps h3 { margin: 0 0 4px; font-size: 1.125rem; font-weight: 600; }
+  ol.steps p { margin: 0 0 6px; color: var(--slate); }
+
+  footer { border-top: 1px solid var(--line); }
+  footer .wrap { padding-top: 32px; padding-bottom: 48px; font-size: 0.9375rem; color: var(--slate); }
+  footer p { margin: 0 0 8px; max-width: 46em; }
+
+  [hidden] { display: none !important; }
+
+  @media (max-width: 860px) {
+    .hero .wrap { grid-template-columns: 1fr; gap: 44px; padding-top: 16px; padding-bottom: 64px; }
+  }
+  @media (max-width: 600px) {
+    .wrap { padding: 0 16px; }
+    .gains { grid-template-columns: 1fr; gap: 24px; }
+    .get { width: 100%; }
+    section.band .wrap { padding-top: 48px; padding-bottom: 48px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .sphere { transition: none; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="wrap">
+    <a class="brand" href="./"><img src="favicon.png" alt="">ZillaNote</a>
+    <nav><a href="https://github.com/mayhuifu/zillanote-lite">Source on GitHub</a></nav>
+  </div>
+</header>
+
+<main>
+  <section class="hero">
+    <div class="wrap">
+      <div>
+        <h1>Meet.<br>Listen.<br>Done.</h1>
+        <p class="lead">ZillaNote records your meeting, writes down who said what, and mails you
+          the minutes. Your recordings stay on your computer.</p>
+
+        <p class="elsewhere" data-show="mobile" hidden>ZillaNote runs on Mac and Windows. Open this
+          page on your computer to download it.</p>
+
+        <div class="choices" id="choices">
+          <a class="get" id="get-mac" data-os="mac"
+             href="https://github.com/mayhuifu/zillanote-lite/releases/latest/download/ZillaNote_aarch64.dmg">
+            <span class="sphere" aria-hidden="true"></span>
+            <span><span class="what">Download for Mac</span><span class="needs">Apple silicon, macOS 12 or later</span></span>
+          </a>
+          <a class="get" id="get-windows" data-os="windows"
+             href="https://github.com/mayhuifu/zillanote-lite/releases/latest/download/ZillaNote_x64-setup.exe">
+            <span class="sphere" aria-hidden="true"></span>
+            <span><span class="what">Download for Windows</span><span class="needs">Windows 10 or 11, preview</span></span>
+          </a>
+        </div>
+
+        <p class="also">
+          <a id="other-os" href="#" hidden></a>
+          <a href="https://github.com/mayhuifu/zillanote-lite/releases">Release notes</a>
+        </p>
+        <p class="version" id="version">Free and open source.</p>
+        <p class="caution" id="intel" hidden>This Mac looks like it has an Intel processor. ZillaNote
+          needs a Mac with Apple silicon (M1 or later).</p>
+
+        <div class="next" id="next" role="status" aria-live="polite" hidden></div>
+      </div>
+
+      <div class="shot">
+        <img src="shot.jpg" width="914" height="664"
+             alt="The ZillaNote bar at the edge of the screen, idle and recording, next to the ZillaNote window with its record button and a list of meetings being transcribed and done.">
+      </div>
+    </div>
+  </section>
+
+  <section class="band">
+    <div class="wrap">
+      <h2>Why ZillaNote</h2>
+      <div class="gains">
+        <div>
+          <h3>Your recordings stay yours</h3>
+          <p>Audio is recorded and transcribed on your computer. It is never uploaded, and nothing
+            is ever sent to the people who make ZillaNote.</p>
+        </div>
+        <div>
+          <h3>Free, with no account</h3>
+          <p>No sign-up and no subscription. The code is open under MIT or Apache-2.0: use it at
+            home or at work, change it, share it.</p>
+        </div>
+        <div>
+          <h3>Your model, your costs</h3>
+          <p>The minutes come from the language model you choose: one on your own computer, free
+            and private, or any OpenAI-compatible service with your own key.</p>
+        </div>
+        <div>
+          <h3>Nothing to do afterwards</h3>
+          <p>Press record when the meeting starts. The transcript, the speaker names and the
+            minutes arrive by themselves, in the app and in your inbox.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band">
+    <div class="wrap">
+      <h2>Getting started</h2>
+      <ol class="steps">
+        <li>
+          <h3>Install it</h3>
+          <p data-show="mac other mobile">On a Mac, open the downloaded file and drag ZillaNote to
+            Applications. The installer is not yet signed by a registered developer, so the first
+            time you open it macOS stops it: open System Settings, then Privacy &amp; Security, and
+            choose Open Anyway.</p>
+          <p data-show="windows other mobile">On Windows, run the installer; it needs no
+            administrator. Because it is not yet signed, Windows may say "Windows protected your
+            PC": choose More info, then Run anyway.</p>
+        </li>
+        <li>
+          <h3>Let it fetch the speech model</h3>
+          <p>On the first start ZillaNote offers to download its speech model, 0.9 GB, once.</p>
+        </li>
+        <li>
+          <h3>Choose who writes the minutes</h3>
+          <p>In Settings, enter a language model: one on your computer, such as LM Studio or Ollama,
+            or a hosted service with your key. Add a mail account if you want the minutes mailed to
+            you. Then press record.</p>
+        </li>
+      </ol>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <p>Only the transcript leaves your computer, and only for the language model you set; the
+      minutes go only to the mail server you set.</p>
+    <p>ZillaNote is free and open source under the MIT or Apache 2.0 license.
+      <a href="https://github.com/mayhuifu/zillanote-lite">Source code, issues and release notes on GitHub</a>.</p>
+  </div>
+</footer>
+
+<script>
+(function () {
+  var REPO = "mayhuifu/zillanote-lite";
+  var FIRST_START = {
+    mac: "<strong>Downloading ZillaNote for Mac.</strong> Open the file and drag ZillaNote to Applications. The first time you open it, macOS stops it because it is not yet signed by a registered developer: open System Settings, then Privacy &amp; Security, and choose Open Anyway.",
+    windows: "<strong>Downloading ZillaNote for Windows.</strong> Run the installer. If Windows says “Windows protected your PC”, choose More info, then Run anyway: the installer is not yet signed."
+  };
+
+  function detect() {
+    // ?os=mac, windows, mobile or other: a link for one system, and a way to check each view.
+    var asked = new URLSearchParams(location.search).get("os");
+    if (["mac", "windows", "mobile", "other"].indexOf(asked) >= 0) return asked;
+    var ua = navigator.userAgent || "";
+    var platform = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || "";
+    if (/android|iphone|ipad|ipod/i.test(ua)) return "mobile";
+    if (/mac/i.test(platform) || /Macintosh/.test(ua)) {
+      // iPadOS asks for desktop pages as a Mac; only a touch screen gives it away.
+      return navigator.maxTouchPoints > 1 ? "mobile" : "mac";
+    }
+    if (/win/i.test(platform) || /Windows/.test(ua)) return "windows";
+    return "other";
+  }
+
+  // Browsers do not say which processor a Mac has; some name the graphics chip, which tells.
+  function looksLikeIntelMac() {
+    try {
+      var gl = document.createElement("canvas").getContext("webgl");
+      var info = gl && gl.getExtension("WEBGL_debug_renderer_info");
+      var renderer = info ? gl.getParameter(info.UNMASKED_RENDERER_WEBGL) : "";
+      return /intel|amd|radeon/i.test(renderer) && !/apple m\d/i.test(renderer);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  var os = detect();
+  var choices = document.getElementById("choices");
+  var mac = document.getElementById("get-mac");
+  var windows = document.getElementById("get-windows");
+
+  document.querySelectorAll("[data-show]").forEach(function (el) {
+    el.hidden = el.getAttribute("data-show").split(" ").indexOf(os) < 0;
+  });
+
+  if (os === "mac" || os === "windows") {
+    var mine = os === "mac" ? mac : windows;
+    var theirs = os === "mac" ? windows : mac;
+    theirs.hidden = true;
+    choices.insertBefore(mine, choices.firstChild);
+    var other = document.getElementById("other-os");
+    other.textContent = theirs === mac ? "Download for Mac" : "Download for Windows, preview";
+    other.href = theirs.href;
+    other.hidden = false;
+    if (os === "mac" && looksLikeIntelMac()) document.getElementById("intel").hidden = false;
+  }
+
+  function downloading(which) {
+    var next = document.getElementById("next");
+    next.innerHTML = FIRST_START[which];
+    next.hidden = false;
+  }
+  mac.addEventListener("click", function () { downloading("mac"); });
+  windows.addEventListener("click", function () { downloading("windows"); });
+  document.getElementById("other-os").addEventListener("click", function () {
+    downloading(os === "mac" ? "windows" : "mac");
+  });
+
+  // The version and sizes, when GitHub answers; the links work without them.
+  fetch("https://api.github.com/repos/" + REPO + "/releases/latest")
+    .then(function (response) { return response.ok ? response.json() : null; })
+    .then(function (release) {
+      if (!release || !release.tag_name) return;
+      var sizes = {};
+      (release.assets || []).forEach(function (asset) { sizes[asset.name] = asset.size; });
+      var file = os === "windows" ? "ZillaNote_x64-setup.exe" : "ZillaNote_aarch64.dmg";
+      var size = sizes[file] ? ", " + Math.round(sizes[file] / 1e6) + " MB" : "";
+      var shown = os === "windows" || os === "mac" ? size : "";
+      document.getElementById("version").textContent =
+        "Version " + release.tag_name.replace(/^v/, "") + shown + ". Free and open source.";
+    })
+    .catch(function () {});
+})();
+</script>
+</body>
+</html>

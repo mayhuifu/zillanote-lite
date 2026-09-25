@@ -39,7 +39,8 @@ The Windows build is made and started on a Windows machine by
 and a start of the built app until both pages report ready). Push the branch `windows-port`,
 push a version tag, or start the job by hand; the installer
 (`ZillaNote_<version>_x64-setup.exe`, for the current user, no administrator needed) is kept
-with the run and attached to a tag's release. The speech engine for Windows is llama.cpp's
+with the run and attached to a tag's release, also as `ZillaNote_x64-setup.exe` for the
+download links that always fetch the latest version. The speech engine for Windows is llama.cpp's
 CPU build, fetched by the same script as on the Mac.
 
 ## Test

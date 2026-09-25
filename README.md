@@ -1,17 +1,27 @@
 # ZillaNote lite
 
 <p align="center">
-  <img src="docs/hero.png" width="720" alt="ZillaNote. Meet. Listen. Done. Your recordings stay on your computer. The floating bar, idle and recording, next to the window with its record button and the list of meetings. Local ASR: transcribe on your device. Local or cloud LLM: choose your model, control your costs. Automatic email: meeting minutes delivered to your inbox. Your system prompt: set the format, focus and tone.">
-</p>
-
-<p align="center">
   <strong>Record a meeting, get the minutes in your inbox.</strong><br>
   Transcribed on your own computer. Free and open source.
 </p>
 
 <p align="center">
-  <a href="https://github.com/mayhuifu/zillanote-lite/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/mayhuifu/zillanote-lite?label=download&color=4a31a6"></a>
-  <img alt="macOS and Windows" src="https://img.shields.io/badge/platform-macOS%20%7C%20Windows%20(preview)-4a31a6">
+  <a href="https://github.com/mayhuifu/zillanote-lite/releases/latest/download/ZillaNote_aarch64.dmg"><img src="docs/download-mac.svg" height="56" alt="Download for Mac"></a>
+  &nbsp;
+  <a href="https://github.com/mayhuifu/zillanote-lite/releases/latest/download/ZillaNote_x64-setup.exe"><img src="docs/download-windows.svg" height="56" alt="Download for Windows"></a>
+</p>
+
+<p align="center">
+  <sub>One click downloads the latest version. The <a href="https://mayhuifu.github.io/zillanote-lite/">website</a> picks the right one for your computer.
+  The first start needs <a href="#install">one extra click</a>.</sub>
+</p>
+
+<p align="center">
+  <img src="docs/hero.png" width="720" alt="ZillaNote. Meet. Listen. Done. Your recordings stay on your computer. The floating bar, idle and recording, next to the window with its record button and the list of meetings. Local ASR: transcribe on your device. Local or cloud LLM: choose your model, control your costs. Automatic email: meeting minutes delivered to your inbox. Your system prompt: set the format, focus and tone.">
+</p>
+
+<p align="center">
+  <a href="https://github.com/mayhuifu/zillanote-lite/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/mayhuifu/zillanote-lite?label=version&color=4a31a6"></a>
   <a href="#free-and-open-source"><img alt="License: MIT or Apache-2.0" src="https://img.shields.io/badge/license-MIT%20or%20Apache--2.0-4a31a6"></a>
 </p>
 
@@ -53,17 +63,17 @@ and mails them to you. The recording never leaves your computer.
 - **Plain files.** Every meeting is a folder on your disk: the audio, the transcript and the
   minutes. Nothing is locked in.
 
-## Download
+## Install
 
-| | Needs | Installer |
+| | Needs | Download |
 |---|---|---|
-| **Mac** | Apple silicon, macOS 12 or later (14.2 or later for the other side of calls, and for noticing when they start and end) | `.dmg` |
-| **Windows** (preview) | Windows 10 or 11, x64 | `.exe` |
+| **Mac** | Apple silicon, macOS 12 or later (14.2 or later for the other side of calls, and for noticing when they start and end) | [`ZillaNote_aarch64.dmg`](https://github.com/mayhuifu/zillanote-lite/releases/latest/download/ZillaNote_aarch64.dmg) |
+| **Windows** (preview) | Windows 10 or 11, x64 | [`ZillaNote_x64-setup.exe`](https://github.com/mayhuifu/zillanote-lite/releases/latest/download/ZillaNote_x64-setup.exe) |
 
-Both are on the [latest release](https://github.com/mayhuifu/zillanote-lite/releases/latest).
+Earlier versions and the release notes are on the [releases page](https://github.com/mayhuifu/zillanote-lite/releases).
 The installers are not yet signed by a registered developer, so the first start takes one
 extra click: on a Mac, **System Settings → Privacy & Security → Open Anyway**; on Windows,
-**More info → Run anyway**. The release page has the steps in full.
+**More info → Run anyway**. The release notes have the steps in full.
 
 On the first start ZillaNote offers to download its speech model (0.9 GB, once). Then, in
 Settings, point it at a language model for the minutes and, if you like, a mail account to
@@ -91,6 +101,7 @@ ships with and downloads, and their licenses, are listed in
 
 ## Learn more
 
+- [Website](https://mayhuifu.github.io/zillanote-lite/): the download for your computer.
 - [How it works](docs/HOW-IT-WORKS.md): every part in detail, and what is not built yet.
 - [Building from source](docs/DEVELOPMENT.md): run, build, test, and the layout of the code.
 - [Release notes](https://github.com/mayhuifu/zillanote-lite/releases): what is new in each

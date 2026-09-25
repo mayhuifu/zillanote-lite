@@ -7,7 +7,9 @@ meeting, finds who spoke, transcribes locally with Qwen3-ASR, writes minutes wit
 OpenAI-compatible language model, and mails them. `README.md` is the public landing page;
 `docs/HOW-IT-WORKS.md` describes every feature's behaviour in detail and
 `docs/DEVELOPMENT.md` the build and the full list of live tests. Keep those in step with
-behaviour changes.
+behaviour changes. `docs/index.html` is the download website (GitHub Pages, served from
+`docs/` on `main`, no Jekyll): one static page that detects Mac or Windows and offers that
+download first (`?os=mac|windows|mobile|other` forces a view).
 
 ## Commands
 
@@ -121,9 +123,13 @@ off, including on `::before`/`::after`, or pseudo-elements get caught mid-animat
 ## Releasing
 
 Bump the version, then push an annotated tag `vX.Y.Z` and create the GitHub release right
-away, so the Windows job's attach step finds it. Build the DMG locally and upload it to the
-release. The release notes carry the SHA-256 of both installers: take them from the
-uploaded assets, because a re-run of the Windows job replaces the exe.
+away, so the Windows job's attach step finds it. The job attaches the exe twice: as
+`ZillaNote_<version>_x64-setup.exe` and as `ZillaNote_x64-setup.exe`. Build the DMG locally
+and upload it twice as well: as `ZillaNote_<version>_aarch64.dmg` and as
+`ZillaNote_aarch64.dmg`. The README buttons and the website link to
+`releases/latest/download/<name without version>`, so a release without those two files
+breaks every download link. The release notes carry the SHA-256 of both installers: take
+them from the uploaded assets, because a re-run of the Windows job replaces the exe.
 
 ## Style
 
