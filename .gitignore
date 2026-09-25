@@ -4,3 +4,5 @@ app/resources/llama-server/*
 !app/resources/llama-server/README.md
 app/gen/
 .DS_Store
+# The design board the look was chosen from (Graphite & Violet), kept locally
+/C · Graphite & Violet@1x.png

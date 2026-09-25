@@ -57,7 +57,8 @@ at a time:
 (drops the far side's loudspeaker echo from the mic) → `chunker::speech_chunks` (pause-based)
 → diarization, best effort (no models means no names), and `turns::split_at_turns` so every
 chunk has one speaker → a bundled `llama-server` is started, transcribes the chunks and is
-stopped again → `minutes::write_minutes` (skipped when `auto_minutes` is off; passing
+stopped again, or, with `asr_provider: service`, each chunk goes to the user's
+OpenAI-compatible transcription service through the same `Qwen3AsrClient` → `minutes::write_minutes` (skipped when `auto_minutes` is off; passing
 failures retried) → email if configured. A failure is recorded on the meeting (status
 `failed` plus the reason), not returned. Meetings that failed with `MODEL_MISSING` are
 processed by themselves once the model download ends.
@@ -85,7 +86,9 @@ thread reads `Store::settings_without_secrets()`, because `settings()` goes to t
 - **LF everywhere** (`.gitattributes`): a CRLF checkout breaks that byte-for-byte test on Windows.
 - **Renamed model or setting ids** stay readable through serde `alias` plus strum `serialize`
   (see `Qwen3AsrModel`). Never list a name in both `serialize` and `to_string`.
-- **Secrets:** only a macOS release build uses the keychain (`cfg(all(target_os = "macos",
+- **Secrets:** the fields kept outside `settings.json` are listed once, in
+  `Settings::secrets_mut()` (LLM key, mail password, speech-service key); a new secret goes
+  there. Only a macOS release build uses the keychain (`cfg(all(target_os = "macos",
   not(debug_assertions)))` in `secrets.rs`). Debug builds keep the API key and mail password
   in `settings.json`, so a dev build on the folder of an installed app has no API key.
 - **TLS:** reqwest uses `native-tls` on purpose: some local proxies drop rustls'

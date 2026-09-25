@@ -11,6 +11,7 @@ use std::sync::Mutex;
 
 pub const LLM_API_KEY: &str = "llm_api_key";
 pub const EMAIL_PASSWORD: &str = "email_password";
+pub const ASR_SERVICE_KEY: &str = "asr_service_key";
 
 pub trait SecretStore: Debug + Send + Sync {
     /// `Ok(None)` when there is no such secret; an error when it could not be looked at (the

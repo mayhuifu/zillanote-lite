@@ -25,6 +25,18 @@ use crate::voices::{MeetingSpeaker, Voice};
 pub const DATA_DIR_ENV: &str = "ZILLANOTE_DATA_DIR";
 const APP_FOLDER: &str = "com.zillanote.lite";
 
+/// Who turns the speech into text.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AsrProvider {
+    /// Qwen3-ASR on this computer: the audio stays here.
+    #[default]
+    Local,
+    /// A service with OpenAI's transcription API, named in Settings: each stretch of speech
+    /// is sent to it.
+    Service,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Status {
@@ -88,8 +100,30 @@ pub struct Settings {
     pub notice_calls: bool,
     /// Stop the recording half a minute after the call program lets the microphone go.
     pub stop_when_call_ends: bool,
-    /// Which of the speech models transcribes.
+    /// Which of the speech models transcribes, when that happens on this computer.
     pub asr_model: qwen3_asr::Qwen3AsrModel,
+    pub asr_provider: AsrProvider,
+    /// The speech service, when that is the choice: its OpenAI-style root, for example
+    /// `https://api.openai.com/v1`, the model to ask for, and the key.
+    pub asr_service_url: String,
+    pub asr_service_model: String,
+    pub asr_service_key: String,
+}
+
+impl Settings {
+    /// Whether a speech service is named well enough to be asked.
+    pub fn asr_service_configured(&self) -> bool {
+        !self.asr_service_url.trim().is_empty() && !self.asr_service_model.trim().is_empty()
+    }
+
+    /// The fields that are secrets, by the names they are kept under.
+    fn secrets_mut(&mut self) -> [(&'static str, &mut String); 3] {
+        [
+            (secrets::LLM_API_KEY, &mut self.llm_api_key),
+            (secrets::EMAIL_PASSWORD, &mut self.email.password),
+            (secrets::ASR_SERVICE_KEY, &mut self.asr_service_key),
+        ]
+    }
 }
 
 impl Default for Settings {
@@ -109,6 +143,10 @@ impl Default for Settings {
             notice_calls: true,
             stop_when_call_ends: true,
             asr_model: qwen3_asr::Qwen3AsrModel::default(),
+            asr_provider: AsrProvider::Local,
+            asr_service_url: String::new(),
+            asr_service_model: String::new(),
+            asr_service_key: String::new(),
         }
     }
 }
@@ -178,10 +216,7 @@ impl Store {
         // A secret still in the file (an older version wrote it, or the keychain refused it)
         // counts; otherwise it is wherever secrets are kept.
         if let Some(secrets) = &self.secrets {
-            for (name, value) in [
-                (secrets::LLM_API_KEY, &mut settings.llm_api_key),
-                (secrets::EMAIL_PASSWORD, &mut settings.email.password),
-            ] {
+            for (name, value) in settings.secrets_mut() {
                 if value.is_empty() {
                     match secrets.get(name) {
                         Ok(secret) => *value = secret.unwrap_or_default(),
@@ -198,8 +233,9 @@ impl Store {
     /// looks at a switch every second.
     pub fn settings_without_secrets(&self) -> Settings {
         let mut settings = self.settings_on_disk();
-        settings.llm_api_key.clear();
-        settings.email.password.clear();
+        for (_, value) in settings.secrets_mut() {
+            value.clear();
+        }
         settings
     }
 
@@ -214,10 +250,7 @@ impl Store {
         let path = self.root.join("settings.json");
         let mut on_disk = settings.clone();
         if let Some(secrets) = &self.secrets {
-            for (name, value) in [
-                (secrets::LLM_API_KEY, &mut on_disk.llm_api_key),
-                (secrets::EMAIL_PASSWORD, &mut on_disk.email.password),
-            ] {
+            for (name, value) in on_disk.secrets_mut() {
                 // An empty field only means "remove it" if the secret could have been shown.
                 // When the keychain cannot be read the field is empty for that reason alone,
                 // and what is stored stays as it is.
@@ -244,8 +277,8 @@ impl Store {
     /// Moves secrets an older version left in `settings.json` to where they are kept now.
     /// With none in the file there is nothing to do, and nothing is touched.
     pub fn migrate_secrets(&self) {
-        let on_disk = self.settings_on_disk();
-        let in_file = !on_disk.llm_api_key.is_empty() || !on_disk.email.password.is_empty();
+        let mut on_disk = self.settings_on_disk();
+        let in_file = on_disk.secrets_mut().iter().any(|(_, value)| !value.is_empty());
         if self.secrets.is_some() && in_file {
             let _ = self.save_settings(&self.settings());
         }
@@ -440,12 +473,16 @@ mod tests {
         assert_eq!(settings.system_prompt, *DEFAULT_SYSTEM_PROMPT);
         assert!(settings.record_system_audio);
         assert!(settings.auto_minutes);
+        // Transcription stays on this computer unless the user names a service.
+        assert_eq!(settings.asr_provider, AsrProvider::Local);
+        assert!(!settings.asr_service_configured());
     }
 
     fn secret_settings() -> Settings {
         let mut settings = Settings::default();
         settings.llm_api_key = "sk-secret".to_string();
         settings.email.password = "app-password".to_string();
+        settings.asr_service_key = "asr-secret".to_string();
         settings
     }
 
@@ -458,8 +495,8 @@ mod tests {
         store.save_settings(&secret_settings()).unwrap();
 
         let file = std::fs::read_to_string(dir.path().join("settings.json")).unwrap();
-        assert!(!file.contains("sk-secret") && !file.contains("app-password"), "{file}");
-        assert_eq!(keychain.values.lock().unwrap().len(), 2);
+        assert!(!file.contains("sk-secret") && !file.contains("app-password") && !file.contains("asr-secret"), "{file}");
+        assert_eq!(keychain.values.lock().unwrap().len(), 3);
         assert_eq!(store.settings(), secret_settings());
 
         // Clearing a secret in Settings clears it for good.
@@ -477,8 +514,19 @@ mod tests {
 
         store.migrate_secrets();
 
-        assert!(!std::fs::read_to_string(dir.path().join("settings.json")).unwrap().contains("sk-secret"));
+        let file = std::fs::read_to_string(dir.path().join("settings.json")).unwrap();
+        assert!(!file.contains("sk-secret") && !file.contains("asr-secret"), "{file}");
         assert_eq!(store.settings(), secret_settings());
+    }
+
+    #[test]
+    fn what_is_read_every_second_never_holds_a_secret() {
+        let (_dir, store) = store();
+        store.save_settings(&secret_settings()).unwrap();
+
+        let settings = store.settings_without_secrets();
+
+        assert!(settings.llm_api_key.is_empty() && settings.email.password.is_empty() && settings.asr_service_key.is_empty());
     }
 
     #[test]

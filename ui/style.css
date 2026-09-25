@@ -62,6 +62,8 @@ button { font: inherit; color: inherit; cursor: pointer; border: 1px solid var(-
 button:disabled { opacity: 0.5; cursor: default; }
 button.icon { border: none; background: none; font-size: 18px; padding: 4px 8px; border-radius: 8px; }
 button.icon:hover, button.text:hover { background: var(--line); }
+/* The gear is a character, drawn smaller than the icons next to it: half again as big. */
+#open-settings { font-size: 27px; line-height: 1; padding: 1px 6px 3px; }
 button.text { border: none; background: none; color: var(--muted); padding: 6px 8px; }
 button.danger { color: var(--accent); }
 button.primary { background: var(--brand-fill); color: #fff; border-color: var(--brand-fill); }
@@ -147,6 +149,7 @@ label.model > span { display: flex; flex-direction: column; gap: 2px; font-size:
 label.model b { font-weight: 600; }
 label.model small { font-size: 12px; color: var(--muted); }
 label.model small.facts { color: var(--text); opacity: 0.8; }
+label.model button { margin-left: auto; align-self: center; font-size: 12px; }
 .tag { font-style: normal; font-weight: 500; font-size: 11px; color: var(--brand); margin-left: 4px; }
 
 /* --- downloading the models --- */
@@ -159,6 +162,9 @@ label.model small.facts { color: var(--text); opacity: 0.8; }
 .speaker { font-size: 12px; padding: 3px 10px; border-radius: 99px; border: 1px dashed var(--line); background: none; color: var(--muted); cursor: pointer; }
 .speaker.named { border-style: solid; color: var(--text); }
 .speaker-name { font-size: 12px; padding: 3px 10px; border-radius: 99px; width: 140px; }
+.speakers .hint { flex-basis: 100%; margin: 2px 0 0; font-size: 12px; }
+ol.steps { margin: 0; padding-left: 20px; font-size: 13px; display: flex; flex-direction: column; gap: 6px; }
+ol.steps .speaker { cursor: default; white-space: nowrap; }
 .transcript b { font-weight: 600; }
 .voices { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
 .voices li { display: flex; align-items: center; justify-content: space-between; font-size: 13px; }
@@ -181,7 +187,26 @@ dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
 #reset-prompt, #test-email { align-self: flex-start; font-size: 12px; }
 button.link { padding: 0 4px; font-size: 12px; color: var(--brand); }
 .meta.problem span { color: var(--accent); }
-.readiness { font-size: 12px; color: var(--muted); white-space: pre-line; }
+
+/* The first page of Settings, and the pages its setup rows open. */
+#settings .page { display: flex; flex-direction: column; gap: 8px; }
+#settings .page[hidden] { display: none; }
+#settings .page h2 { display: flex; align-items: center; gap: 4px; }
+button.back { border: none; background: none; color: var(--muted); font-size: 22px; line-height: 1; padding: 0 8px 2px 0; }
+button.back:hover { color: var(--text); background: none; }
+.setup { display: flex; flex-direction: column; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); overflow: hidden; }
+.setup button { display: flex; align-items: center; gap: 12px; border: none; border-bottom: 1px solid var(--line); border-radius: 0; background: none; padding: 10px 12px; text-align: left; font-size: 13px; }
+.setup button:last-child { border-bottom: none; }
+.setup button:hover { background: var(--bg); }
+.setup button span { white-space: nowrap; }
+.setup button small { margin-left: auto; color: var(--muted); font-size: 12px; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.setup button small.problem { color: var(--accent); }
+.setup button::after { content: "›"; color: var(--muted); font-size: 18px; line-height: 1; }
+#settings-form label.check > span { display: flex; flex-direction: column; gap: 2px; }
+#settings-form label.check small { font-size: 12px; color: var(--muted); }
+#settings .group { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+#settings .group[hidden] { display: none; }
+#test-asr { align-self: flex-start; font-size: 12px; }
 menu { display: flex; justify-content: flex-end; gap: 8px; padding: 0; margin: 10px 0 0; }
 
 .toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 8px 14px; border-radius: 99px; font-size: 13px; max-width: 86vw; }

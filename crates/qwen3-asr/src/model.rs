@@ -169,6 +169,38 @@ impl Qwen3AsrModel {
         let downloads = self.downloads().into_iter();
         downloads.filter(|file| !dirs.iter().any(|dir| dir.join(file.file_name).is_file())).collect()
     }
+
+    /// What this model takes in ZillaNote's own folder, unfinished downloads included: the
+    /// space deleting it gives back. Files LM Studio keeps are not counted.
+    pub fn own_bytes(self, models_base: &Path) -> u64 {
+        folder_bytes(&self.install_dir(models_base))
+    }
+
+    /// Deletes this model's folder of ZillaNote's own, unfinished downloads included, and
+    /// says how many bytes that freed. Files LM Studio keeps are LM Studio's, and stay.
+    pub fn delete_own_files(self, models_base: &Path) -> std::io::Result<u64> {
+        let dir = self.install_dir(models_base);
+        let freed = folder_bytes(&dir);
+        match std::fs::remove_dir_all(&dir) {
+            Ok(()) => Ok(freed),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(0),
+            Err(error) => Err(error),
+        }
+    }
+}
+
+fn folder_bytes(dir: &Path) -> u64 {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    entries
+        .flatten()
+        .map(|entry| match entry.metadata() {
+            Ok(meta) if meta.is_dir() => folder_bytes(&entry.path()),
+            Ok(meta) => meta.len(),
+            Err(_) => 0,
+        })
+        .sum()
 }
 
 fn lm_studio_models_dirs() -> Vec<PathBuf> {
@@ -257,5 +289,27 @@ mod tests {
         let files = Qwen3AsrModel::SmallQ4.locate_files_in(&[ours.clone(), lm_studio.clone()]).unwrap();
 
         assert_eq!((files.model, files.mmproj), (ours.join(model.file_name), lm_studio.join(mmproj.file_name)));
+    }
+
+    #[test]
+    fn deleting_a_model_frees_its_own_folder_and_nothing_else() {
+        let dir = tempfile::tempdir().unwrap();
+        let small = Qwen3AsrModel::SmallQ4.install_dir(dir.path());
+        let large = Qwen3AsrModel::Large.install_dir(dir.path());
+        std::fs::create_dir_all(&small).unwrap();
+        std::fs::create_dir_all(&large).unwrap();
+        let [model, mmproj] = Qwen3AsrModel::SmallQ4.downloads();
+        std::fs::write(small.join(model.file_name), vec![0u8; 300]).unwrap();
+        std::fs::write(small.join(format!("{}.part", mmproj.file_name)), vec![0u8; 50]).unwrap();
+        std::fs::write(large.join("kept.gguf"), vec![0u8; 70]).unwrap();
+
+        assert_eq!(Qwen3AsrModel::SmallQ4.own_bytes(dir.path()), 350);
+        assert_eq!(Qwen3AsrModel::SmallQ4.delete_own_files(dir.path()).unwrap(), 350);
+
+        assert!(!small.exists());
+        assert_eq!(Qwen3AsrModel::SmallQ4.own_bytes(dir.path()), 0);
+        assert_eq!(Qwen3AsrModel::Large.own_bytes(dir.path()), 70);
+        // Nothing left to delete is not a failure.
+        assert_eq!(Qwen3AsrModel::SmallQ4.delete_own_files(dir.path()).unwrap(), 0);
     }
 }

@@ -217,6 +217,13 @@ function renderSpeakers(speakers) {
     chip.addEventListener("click", () => editSpeaker(chip, speaker));
     strip.appendChild(chip);
   }
+  // Said on the page, not only in a tooltip: nothing else tells that the chips can be clicked.
+  if (speakers.some((speaker) => !speaker.named)) {
+    const hint = document.createElement("p");
+    hint.className = "hint";
+    hint.textContent = "Click a speaker to name them. ZillaNote remembers the voice and names it by itself in later meetings.";
+    strip.appendChild(hint);
+  }
   strip.dataset.count = speakers.length;
   renderTabs();
 }
@@ -312,8 +319,11 @@ $("delete").addEventListener("click", async () => {
 async function showReadiness() {
   const ready = await call("readiness");
   const problems = [];
-  if (!ready.server_found) {
+  if (ready.asr_provider === "local" && !ready.server_found) {
     problems.push("The speech engine (llama-server) was not found. Run: node scripts/fetch-llama-server.mjs");
+  }
+  if (ready.asr_provider === "service" && !ready.speech_ready) {
+    problems.push("No speech service is set up yet, so recordings cannot be transcribed. Open Settings → Speech recognition.");
   }
   if (!ready.llm_configured) {
     problems.push("No language model is chosen yet, so recordings will be transcribed but get no minutes. Open Settings.");
@@ -323,18 +333,14 @@ async function showReadiness() {
   missing = ready.download_bytes
     ? {
         bytes: ready.download_bytes,
-        what: !ready.model_found
-          ? `The speech model (${ready.model_name}) is not on this Mac yet. Recordings are kept, and transcribed once it is here. Settings has smaller models to choose from.`
-          : "Two small models are needed to tell speakers apart.",
+        what:
+          ready.asr_provider === "local" && !ready.model_found
+            ? `The speech model (${ready.model_name}) is not on this computer yet. Recordings are kept, and transcribed once it is here. Settings has smaller models to choose from, or a speech service.`
+            : "Two small models are needed to tell speakers apart.",
       }
     : null;
   renderDownload(await call("download_status"));
   return ready;
-  $("readiness").textContent = [
-    `Speech model: ${ready.model_found ? ready.model_location : "not found"}`,
-    `Speech engine: ${ready.server_found ? ready.server_location : "not found"}`,
-    `Speaker names: ${ready.speaker_models_found ? "on" : "off, the speaker models are not installed"}`,
-  ].join("\n");
 }
 
 // --- choosing the speech model ---
@@ -349,7 +355,10 @@ function duration(seconds) {
 function modelFacts(model) {
   const size = `${gigabytes(model.size_bytes)} download`;
   const memory = `needs ${gigabytes(model.memory_bytes)} of memory`;
-  if (!model.missing_bytes) return `On this Mac · ${gigabytes(model.size_bytes)} · ${memory}`;
+  if (!model.missing_bytes) {
+    const where = model.own_bytes ? `On this computer · ${gigabytes(model.own_bytes)}` : "In LM Studio's models folder";
+    return `${where} · ${memory}`;
+  }
   const left = model.missing_bytes < model.size_bytes ? `${gigabytes(model.missing_bytes)} still to download` : size;
   const time =
     downloadSpeed === undefined
@@ -362,7 +371,7 @@ function modelFacts(model) {
 
 function renderModels(ready) {
   $("models-help").textContent =
-    `Transcription runs on this Mac (${Math.round(ready.total_memory_bytes / 2 ** 30)} GB of memory). The bigger the model, the fewer mis-heard words; it needs the memory shown only while a recording is being transcribed.`;
+    `This computer has ${Math.round(ready.total_memory_bytes / 2 ** 30)} GB of memory. The bigger the model, the fewer mis-heard words; it needs the memory shown only while a recording is being transcribed.`;
   const list = $("models");
   list.innerHTML = "";
   for (const model of ready.models) {
@@ -375,15 +384,44 @@ function renderModels(ready) {
         <small>${escapeHtml(model.description)}</small>
         <small class="facts">${escapeHtml(modelFacts(model))}</small>
       </span>`;
+    // Only files of ZillaNote's own can go; LM Studio's are LM Studio's.
+    if (model.own_bytes) {
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "text danger";
+      remove.textContent = "Delete";
+      remove.addEventListener("click", (event) => {
+        event.preventDefault(); // not a click on the model's own choice
+        deleteModel(model);
+      });
+      option.appendChild(remove);
+    }
+    option.querySelector("input").addEventListener("change", renderSetupStatus);
     list.appendChild(option);
   }
+}
+
+const pickedModel = () => document.querySelector('input[name="asr-model"]:checked')?.value;
+
+async function deleteModel(model) {
+  const inUse = model.id === pickedModel() && provider() === "local";
+  const question = inUse
+    ? `Delete ${model.name} (${gigabytes(model.own_bytes)})? It is the model chosen to transcribe: recordings wait until it is downloaded again, or until you choose another.`
+    : `Delete ${model.name} (${gigabytes(model.own_bytes)}) from this computer? It can be downloaded again at any time.`;
+  if (!confirm(question)) return;
+  const freed = await call("delete_model", { id: model.id });
+  toast(`${model.name} deleted: ${gigabytes(freed)} freed`);
+  const picked = pickedModel();
+  lastReady = await showReadiness();
+  renderModels({ ...lastReady, models: lastReady.models.map((choice) => ({ ...choice, chosen: choice.id === picked })) });
+  renderSetupStatus();
 }
 
 async function measureConnection(ready) {
   if (downloadSpeed !== undefined || !ready.models.some((model) => model.missing_bytes)) return;
   downloadSpeed = (await invoke("probe_download_speed").catch(() => null)) || null;
   // Keep what the user has picked meanwhile.
-  const picked = document.querySelector('input[name="asr-model"]:checked')?.value;
+  const picked = pickedModel();
   renderModels({ ...ready, models: ready.models.map((model) => ({ ...model, chosen: model.id === picked })) });
 }
 
@@ -414,10 +452,13 @@ $("download-start").addEventListener("click", async () => {
 });
 $("download-stop").addEventListener("click", () => call("cancel_download"));
 
+let voiceCount = 0;
 async function showVoices() {
   const voices = await call("list_voices");
+  voiceCount = voices.length;
+  renderSetupStatus();
   const list = $("voices");
-  list.innerHTML = voices.length ? "" : `<li class="help">None yet.</li>`;
+  list.innerHTML = voices.length ? "" : `<li class="help">None yet: name a speaker as above, and the voice is listed here.</li>`;
   for (const voice of voices) {
     const item = document.createElement("li");
     item.innerHTML = `<span>${escapeHtml(voice.name)}</span>`;
@@ -434,8 +475,82 @@ async function showVoices() {
   }
 }
 
+// --- the pages of Settings ---
+
+let lastReady = null; // what readiness said when Settings opened, for the status lines
+let defaultPrompt = "";
+
+function showPage(name) {
+  for (const page of document.querySelectorAll("#settings .page")) page.hidden = page.dataset.page !== name;
+  if (name === "main") renderSetupStatus();
+  $("settings").scrollTop = 0;
+}
+for (const row of document.querySelectorAll("#settings [data-open]")) {
+  row.addEventListener("click", () => showPage(row.dataset.open));
+}
+for (const back of document.querySelectorAll("#settings .back")) {
+  back.addEventListener("click", () => showPage("main"));
+}
+
+const provider = () => document.querySelector('input[name="asr-provider"]:checked')?.value || "local";
+function showProvider() {
+  $("asr-local").hidden = provider() !== "local";
+  $("asr-service").hidden = provider() !== "service";
+}
+for (const radio of document.querySelectorAll('input[name="asr-provider"]')) {
+  radio.addEventListener("change", () => {
+    showProvider();
+    renderSetupStatus();
+  });
+}
+
+const host = (url) => {
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+};
+
+// One line under each setup row: what is chosen, or what is missing. It follows the fields as
+// they are now, saved or not.
+function renderSetupStatus() {
+  const status = (id, text, problem = false) => {
+    $(id).textContent = text;
+    $(id).classList.toggle("problem", problem);
+  };
+  if (provider() === "service") {
+    const [url, model] = [$("asr-url").value.trim(), $("asr-model-name").value.trim()];
+    status("status-speech", url && model ? `${model}, ${host(url)}` : "A speech service, not set up yet", !(url && model));
+  } else {
+    const model = lastReady?.models.find((choice) => choice.id === pickedModel());
+    if (model) {
+      const here = !model.missing_bytes;
+      status("status-speech", here ? model.name : `${model.name}, not downloaded yet`, !here);
+    }
+  }
+  const [llmUrl, llmModel] = [$("llm-url").value.trim(), $("llm-model").value.trim()];
+  status("status-llm", llmUrl && llmModel ? `${llmModel}, ${host(llmUrl)}` : "Not set up yet: no minutes without it", !(llmUrl && llmModel));
+  const terms = $("vocabulary").value.split("\n").filter((term) => term.trim()).length;
+  const prompt = $("system-prompt").value.trim() === defaultPrompt.trim() ? "Default prompt" : "Your own prompt";
+  status("status-prompt", terms ? `${prompt}, ${terms} ${terms === 1 ? "term" : "terms"}` : prompt);
+  const to = $("email-to").value.trim();
+  status("status-email", to ? `To ${to}` : "Off");
+  status("status-voices", voiceCount ? `${voiceCount} ${voiceCount === 1 ? "voice" : "voices"}` : "None yet");
+}
+
 $("open-settings").addEventListener("click", async () => {
   const settings = await call("get_settings");
+  defaultPrompt = await call("default_system_prompt");
+  for (const radio of document.querySelectorAll('input[name="asr-provider"]')) {
+    radio.checked = radio.value === settings.asr_provider;
+  }
+  showProvider();
+  $("asr-url").value = settings.asr_service_url;
+  $("asr-model-name").value = settings.asr_service_model;
+  $("asr-key").value = settings.asr_service_key;
+  $("test-asr-result").hidden = true;
+  $("test-email-result").hidden = true;
   $("llm-url").value = settings.llm_base_url;
   $("llm-model").value = settings.llm_model;
   $("llm-key").value = settings.llm_api_key;
@@ -453,8 +568,10 @@ $("open-settings").addEventListener("click", async () => {
   showServerField();
   $("settings").dataset.maxChars = settings.max_chars_per_call;
   const ready = await showReadiness();
+  lastReady = ready;
   renderModels(ready);
   await showVoices();
+  showPage("main");
   $("settings").showModal();
   measureConnection(ready);
 });
@@ -480,7 +597,11 @@ function readSettings() {
     notice_calls: $("notice-calls").checked,
     stop_when_call_ends: $("stop-after-call").checked,
     auto_minutes: $("auto-minutes").checked,
-    asr_model: document.querySelector('input[name="asr-model"]:checked')?.value,
+    asr_model: pickedModel(),
+    asr_provider: provider(),
+    asr_service_url: $("asr-url").value.trim(),
+    asr_service_model: $("asr-model-name").value.trim(),
+    asr_service_key: $("asr-key").value.trim(),
     email: {
       to: $("email-to").value.trim(),
       from: $("email-from").value.trim(),
@@ -511,11 +632,35 @@ $("test-email").addEventListener("click", async () => {
   }
 });
 
+$("test-asr").addEventListener("click", async () => {
+  const button = $("test-asr");
+  button.disabled = true;
+  button.textContent = "Asking the service…";
+  const result = $("test-asr-result");
+  result.hidden = true;
+  try {
+    const heard = await invoke("test_speech_service", { settings: readSettings() });
+    result.textContent = `The service answered${heard ? `, and heard: "${heard}"` : ", and heard no words in the test sound, as it should"}. It is ready to transcribe.`;
+    result.className = "help result ok";
+  } catch (error) {
+    result.textContent = String(error);
+    result.className = "help result problem";
+  } finally {
+    result.hidden = false;
+    button.disabled = false;
+    button.textContent = "Test the service";
+  }
+});
+
 $("open-system-audio").addEventListener("click", () => call("open_system_audio_settings"));
 
 $("reset-prompt").addEventListener("click", async () => {
   $("system-prompt").value = await call("default_system_prompt");
+  renderSetupStatus();
 });
+for (const id of ["asr-url", "asr-model-name", "llm-url", "llm-model", "email-to", "vocabulary", "system-prompt"]) {
+  $(id).addEventListener("input", renderSetupStatus);
+}
 $("cancel-settings").addEventListener("click", () => $("settings").close());
 $("collapse").addEventListener("click", () => invoke("show_mini"));
 // Asks first when a recording or a meeting in the works would be cut short.

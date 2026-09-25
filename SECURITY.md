@@ -1,9 +1,11 @@
 # Security
 
-ZillaNote lite runs on your computer. Audio never leaves it; the transcript goes only to the
-language-model endpoint you configure, and the minutes to the mail server you configure.
+ZillaNote lite runs on your computer. Audio does not leave it, unless you choose a speech
+service in Settings, which then gets each stretch of speech to transcribe; the transcript goes
+only to the language-model endpoint you configure, and the minutes to the mail server you
+configure.
 The speech engine it starts listens on `127.0.0.1` on a port of its own choosing; downloads
-are checked against pinned SHA-256 checksums; the API key and mail password go to the
+are checked against pinned SHA-256 checksums; the API keys and mail password go to the
 macOS keychain (on Windows they stay in the settings file of your user profile for now).
 
 If you find a way round any of that, or any other vulnerability, please do not open a

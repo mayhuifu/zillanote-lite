@@ -13,7 +13,16 @@ each part does in detail; [`DEVELOPMENT.md`](DEVELOPMENT.md) says how to build a
   one for meetings that mix English and Mandarin; 2.8 GB to download, 3.5 GB of memory) and
   0.6B at 4 bits (the default: a 0.9 GB download and 1.6 GB of memory while transcribing).
   Settings that name one of the two in-between choices of earlier versions are read as the
-  nearest of these.
+  nearest of these. A downloaded model has a Delete button, to give the space back after
+  switching to the other one (or to a service); only ZillaNote's own copy is deleted, never
+  files LM Studio keeps, and not while a meeting is being worked on or a download runs.
+- **A speech service instead:** Settings → Speech recognition can name a service with
+  OpenAI's transcription API (OpenAI, Groq, SiliconFlow, a Whisper server of your own):
+  endpoint, model and API key, with a Test button that sends a second of a quiet tone.
+  Speakers are still found on this computer; each stretch of speech is then sent to the
+  service with the names and terms from Settings, and no speech model has to be downloaded.
+  A busy service is tried twice more before a stretch is given up. The key is kept like the
+  language model's.
 - **Minutes:** any OpenAI-compatible endpoint (LM Studio, Ollama, or a hosted API with a key).
   The system prompt, editable in Settings (its default is in
   [`default-system-prompt.md`](default-system-prompt.md)), holds the rules and,
@@ -75,7 +84,11 @@ each part does in detail; [`DEVELOPMENT.md`](DEVELOPMENT.md) says how to build a
 - **Import:** "Import a recording", or a file dropped on the window, makes a meeting from a
   recording made elsewhere (WAV anywhere; m4a, mp3, mp4 and the rest through macOS's own
   converter). The original is only read.
-- **Secrets:** the installed app keeps the API key and the mail password in the macOS
+- **Settings:** the first page holds the switches for recording and minutes; Speech
+  recognition, Language model, Prompt and vocabulary, Email and Remembered voices each open
+  a page of their own, with a line saying what is set there or what is missing. One Save
+  keeps the changes of every page.
+- **Secrets:** the installed app keeps the API keys and the mail password in the macOS
   keychain, and moves any that an older version left in `settings.json`. If the keychain
   refuses, the secret stays in the file rather than being lost; if it cannot be read (you
   said no to its question), what it holds is left alone, whatever Settings is saved as. Development builds
@@ -102,7 +115,9 @@ download ends.
 ## Privacy
 
 Audio is recorded to a file on this computer and read by programs on this computer: the
-bundled speech engine and the speaker models. The transcript goes to one place, the
+bundled speech engine and the speaker models. The one exception is your own choice: with a
+speech service set in Settings → Speech recognition, each stretch of speech is sent to that
+service to be transcribed. The transcript goes to one place, the
 language-model endpoint set in Settings, which can be a program on this computer (LM Studio,
 Ollama) or a hosted API of your choosing; the minutes go to the mail server set in Settings,
 if any. Model files are downloaded from Hugging Face and GitHub, or their mirrors, and

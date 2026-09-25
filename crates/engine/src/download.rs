@@ -103,7 +103,9 @@ pub struct Package {
 
 /// What is missing for `model`, smallest first, so speaker names work long before the
 /// speech model has arrived. A file LM Studio already has is not fetched again.
-pub fn missing_packages(models_dir: &Path, speaker_models_dir: &Path, model: Qwen3AsrModel) -> Vec<Package> {
+/// What is still to be fetched: the speaker models, and the speech model when `model` is
+/// the one to transcribe with here (none when a service transcribes).
+pub fn missing_packages(models_dir: &Path, speaker_models_dir: &Path, model: Option<Qwen3AsrModel>) -> Vec<Package> {
     let mut packages = Vec::new();
     if speakers::SpeakerModels::locate(speaker_models_dir).is_none() {
         packages.push(Package {
@@ -111,12 +113,14 @@ pub fn missing_packages(models_dir: &Path, speaker_models_dir: &Path, model: Qwe
             files: SPEAKER_MODELS.to_vec(),
         });
     }
-    let missing = model.missing_downloads(models_dir);
-    if !missing.is_empty() {
-        packages.push(Package {
-            dir: model.install_dir(models_dir),
-            files: missing.into_iter().map(as_download).collect(),
-        });
+    if let Some(model) = model {
+        let missing = model.missing_downloads(models_dir);
+        if !missing.is_empty() {
+            packages.push(Package {
+                dir: model.install_dir(models_dir),
+                files: missing.into_iter().map(as_download).collect(),
+            });
+        }
     }
     packages
 }
@@ -623,7 +627,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let speaker_models = dir.path().join("speakers");
 
-        let packages = missing_packages(dir.path(), &speaker_models, Qwen3AsrModel::Large);
+        let packages = missing_packages(dir.path(), &speaker_models, Some(Qwen3AsrModel::Large));
         assert_eq!(packages[0].dir, speaker_models);
         assert_eq!(total_bytes(&packages[..1]), 32_530_883);
 
@@ -631,7 +635,18 @@ mod tests {
         for file in SPEAKER_MODELS {
             std::fs::write(speaker_models.join(file.file_name), b"model").unwrap();
         }
-        assert!(missing_packages(dir.path(), &speaker_models, Qwen3AsrModel::Large).iter().all(|package| package.dir != speaker_models));
+        assert!(missing_packages(dir.path(), &speaker_models, Some(Qwen3AsrModel::Large)).iter().all(|package| package.dir != speaker_models));
+    }
+
+    #[test]
+    fn a_speech_service_needs_no_speech_model_downloaded() {
+        let dir = tempfile::tempdir().unwrap();
+        let speaker_models = dir.path().join("speakers");
+
+        let packages = missing_packages(dir.path(), &speaker_models, None);
+
+        assert_eq!(packages.len(), 1);
+        assert_eq!(packages[0].dir, speaker_models);
     }
 
     /// Fetches the two speaker models (32 MB) from GitHub and checks them:

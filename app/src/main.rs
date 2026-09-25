@@ -9,7 +9,7 @@ use engine::calls::{CallState, CallWatch};
 use engine::download::{self, Retry};
 use engine::pipeline::{Pipeline, Readiness};
 use engine::recorder::Recording;
-use engine::store::{Meeting, Settings, Status, Store};
+use engine::store::{AsrProvider, Meeting, Settings, Status, Store};
 use engine::templates::{DEFAULT_SYSTEM_PROMPT, TEMPLATES, Template};
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::TrayIconBuilder;
@@ -460,6 +460,33 @@ async fn send_test_email(settings: Settings) -> Result<(), String> {
     sent
 }
 
+/// Tries the speech service as typed, before it is saved: a second of sound, and what the
+/// service made of it.
+#[tauri::command]
+async fn test_speech_service(settings: Settings) -> Result<String, String> {
+    let answer = engine::pipeline::test_speech_service(&settings).await;
+    match &answer {
+        Ok(_) => tracing::info!(service = %settings.asr_service_url.trim(), "speech_service_test_answered"),
+        Err(error) => tracing::warn!(%error, "speech_service_test_failed"),
+    }
+    answer
+}
+
+/// Deletes a speech model's files of ZillaNote's own to give the space back, and says how
+/// many bytes that was. Not while the recognizer may have them open, or while they arrive.
+#[tauri::command]
+fn delete_model(state: State<'_, App>, id: String) -> Result<u64, String> {
+    if state.download.running.load(Ordering::SeqCst) {
+        return Err("A download is running. Stop it or let it finish, then delete the model.".to_string());
+    }
+    // Held for as long as the job runs, so nothing can start transcribing meanwhile.
+    let _no_job = state
+        .jobs
+        .try_lock()
+        .map_err(|_| "A meeting is being worked on. Delete the model when it is done.".to_string())?;
+    state.pipeline.delete_model(&id)
+}
+
 /// Leaves the app. When that would cut something short, it asks first, and says what
 /// happens to the work; a recording under way is closed properly, never dropped.
 async fn request_quit(app: AppHandle) {
@@ -556,8 +583,10 @@ fn download_models(app: AppHandle, state: State<'_, App>) -> Result<(), String> 
     let _ = app.emit(DOWNLOAD_PROGRESS, beginning);
 
     tauri::async_runtime::spawn(async move {
-        let packages =
-            download::missing_packages(&store.models_dir(), &store.speaker_models_dir(), store.settings().asr_model);
+        let settings = store.settings();
+        // A speech service needs no speech model here; the speaker models are still wanted.
+        let speech_model = (settings.asr_provider == AsrProvider::Local).then_some(settings.asr_model);
+        let packages = download::missing_packages(&store.models_dir(), &store.speaker_models_dir(), speech_model);
         let publish = |status: DownloadStatus| {
             *shared.status.lock().unwrap() = status.clone();
             let _ = app.emit(DOWNLOAD_PROGRESS, status);
@@ -937,6 +966,8 @@ fn main() {
             keep_recording,
             send_minutes,
             send_test_email,
+            test_speech_service,
+            delete_model,
             open_system_audio_settings,
             name_speaker,
             list_voices,

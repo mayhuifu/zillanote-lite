@@ -15,11 +15,31 @@ use crate::chunker::{Chunk, ChunkerConfig, speech_chunks};
 use crate::email;
 use crate::minutes::{About, LlmConfig, write_minutes};
 use crate::mixdown::recognition_signal;
-use crate::store::{Meeting, Settings, Status, Store};
+use crate::store::{AsrProvider, Meeting, Settings, Status, Store};
 use crate::templates::template;
 use crate::transcript::{Segment, Transcript};
 use crate::turns::{Piece, Turn, seconds_by_speaker, split_at_turns};
 use crate::voices::{self, MeetingSpeaker};
+
+/// The client for the speech service named in `settings`.
+fn speech_service(settings: &Settings) -> Result<Qwen3AsrClient, String> {
+    Qwen3AsrClient::service(&settings.asr_service_url, &settings.asr_service_model, &settings.asr_service_key)
+        .map_err(|e| e.to_string())
+}
+
+/// Sends the speech service a second of sound, for the Test button in Settings: whether it
+/// answers, and what. Nothing from a meeting is sent.
+pub async fn test_speech_service(settings: &Settings) -> Result<String, String> {
+    if !settings.asr_service_configured() {
+        return Err("Enter the service's address and model first.".to_string());
+    }
+    // A quiet tone: some services refuse a file of pure silence.
+    let tone: Vec<f32> = (0..TARGET_RATE)
+        .map(|i| 0.05 * (std::f32::consts::TAU * 440.0 * i as f32 / TARGET_RATE as f32).sin())
+        .collect();
+    let client = speech_service(settings)?.with_retry_pauses(&[]);
+    client.transcribe_samples(&tone).await.map_err(|e| e.to_string())
+}
 
 /// For when the app leaves: a recognizer still running would keep gigabytes of memory.
 pub fn stop_servers() {
@@ -102,8 +122,15 @@ impl Pipeline {
         on_update: &(dyn Fn(&Meeting) + Send + Sync),
     ) -> Result<(), String> {
         self.update(meeting, Status::Transcribing, 0.0, on_update);
+        let settings = self.store.settings();
         // Before any work: finding the speakers takes minutes, and would be for nothing.
-        let server_config = self.server_config()?;
+        let server_config = match settings.asr_provider {
+            AsrProvider::Local => Some(self.server_config()?),
+            AsrProvider::Service if settings.asr_service_configured() => None,
+            AsrProvider::Service => {
+                return Err("No speech service is set up: enter its address and model in Settings, or transcribe on this computer.".to_string());
+            }
+        };
 
         let audio_path = self.store.audio_path(&meeting.id);
         let samples = tokio::task::spawn_blocking(move || read_wav_16k_channels(&audio_path).map(recognition_signal))
@@ -119,12 +146,20 @@ impl Pipeline {
         let (pieces, speakers) = self.find_speakers(meeting, &samples, &chunks, on_update);
         let share = if speakers.is_empty() { 0.0 } else { SPEAKERS_SHARE };
 
-        let settings = self.store.settings();
-        let model = settings.asr_model;
-        let mut server = self.start_server(server_config).await?;
-        let client = Qwen3AsrClient::new(&server.base_url(), model)
-            .map_err(|e| e.to_string())?
-            .with_vocabulary(&settings.vocabulary);
+        // A local recognizer is started for this recording alone; a service is only asked.
+        let (client, mut server, engine) = match server_config {
+            Some(config) => {
+                let server = self.start_server(config).await?;
+                let client = Qwen3AsrClient::new(&server.base_url(), settings.asr_model).map_err(|e| e.to_string())?;
+                (client, Some(server), settings.asr_model.as_str().to_string())
+            }
+            None => {
+                let client = speech_service(&settings)?;
+                tracing::info!(meeting = %meeting.id, service = %settings.asr_service_url, "transcribing_with_service");
+                (client, None, settings.asr_service_model.trim().to_string())
+            }
+        };
+        let client = client.with_vocabulary(&settings.vocabulary);
 
         let mut segments = Vec::new();
         let mut failures = 0;
@@ -153,7 +188,9 @@ impl Pipeline {
             );
         }
         // The recognizer's memory goes back before the language model is asked for any.
-        server.stop().await;
+        if let Some(server) = server.as_mut() {
+            server.stop().await;
+        }
 
         // A few lost chunks leave gaps; every chunk failing means the server is unusable.
         if segments.is_empty() && failures > 0 {
@@ -162,7 +199,7 @@ impl Pipeline {
 
         let transcript = Transcript {
             duration_seconds,
-            engine: model.as_str().to_string(),
+            engine,
             segments,
         };
         if transcript.is_empty() {
@@ -325,6 +362,18 @@ impl Pipeline {
         LlamaServer::start(config).await.map_err(|e| e.to_string())
     }
 
+    /// Deletes the files of a speech model that are ZillaNote's own, to give the space back,
+    /// and says how many bytes that was. The caller makes sure nothing is transcribing.
+    pub fn delete_model(&self, id: &str) -> Result<u64, String> {
+        let model: Qwen3AsrModel = serde_json::from_value(serde_json::Value::String(id.to_string()))
+            .map_err(|_| format!("There is no speech model \"{id}\"."))?;
+        let freed = model
+            .delete_own_files(&self.store.models_dir())
+            .map_err(|error| format!("The model could not be deleted: {error}"))?;
+        tracing::info!(model = model.as_str(), freed_bytes = freed, "model_deleted");
+        Ok(freed)
+    }
+
     /// The meetings that failed only because the speech model was not there yet.
     pub fn waiting_for_model(&self) -> Vec<String> {
         let meetings = self.store.meetings().into_iter();
@@ -460,6 +509,9 @@ pub struct ModelChoice {
     /// The whole model, and what of it is not on this machine yet.
     pub size_bytes: u64,
     pub missing_bytes: u64,
+    /// What it takes in ZillaNote's own folder, which deleting it gives back. A model found
+    /// complete with nothing here is LM Studio's.
+    pub own_bytes: u64,
     /// Memory it needs while transcribing.
     pub memory_bytes: u64,
     pub chosen: bool,
@@ -470,6 +522,10 @@ pub struct ModelChoice {
 /// Whether transcription can start, and if not, what is missing.
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct Readiness {
+    pub asr_provider: AsrProvider,
+    /// Whether a recording can be turned into text: the chosen model is here, or a service
+    /// is named.
+    pub speech_ready: bool,
     pub model_found: bool,
     pub model_name: &'static str,
     pub model_location: Option<String>,
@@ -494,8 +550,11 @@ impl Pipeline {
         let model = settings.asr_model;
         let files = model.locate_files(&models_dir);
         let server = find_llama_server(&self.bundled_server_dirs);
+        let local = settings.asr_provider == AsrProvider::Local;
 
         Readiness {
+            asr_provider: settings.asr_provider,
+            speech_ready: if local { files.is_some() } else { settings.asr_service_configured() },
             model_found: files.is_some(),
             model_name: model.display_name(),
             model_location: files
@@ -509,6 +568,7 @@ impl Pipeline {
                     description: choice.description(),
                     size_bytes: choice.size_bytes(),
                     missing_bytes: choice.missing_downloads(&models_dir).iter().map(|file| file.size_bytes).sum(),
+                    own_bytes: choice.own_bytes(&models_dir),
                     memory_bytes: choice.memory_bytes(),
                     chosen: *choice == model,
                     is_default: *choice == Qwen3AsrModel::default(),
@@ -521,7 +581,7 @@ impl Pipeline {
             download_bytes: crate::download::total_bytes(&crate::download::missing_packages(
                 &models_dir,
                 &self.store.speaker_models_dir(),
-                model,
+                local.then_some(model),
             )),
             llm_configured: !settings.llm_base_url.trim().is_empty()
                 && !settings.llm_model.trim().is_empty(),
@@ -598,6 +658,109 @@ mod tests {
         std::fs::write(&text, b"not samples").unwrap();
         assert!(pipeline.import(&text).is_err());
         assert_eq!(store.meetings().len(), 1);
+    }
+
+    #[test]
+    fn a_model_is_deleted_by_the_id_the_window_knows_it_by() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path().to_path_buf()).unwrap();
+        let pipeline = Pipeline {
+            store: store.clone(),
+            bundled_server_dirs: Vec::new(),
+        };
+        let folder = Qwen3AsrModel::Large.install_dir(&store.models_dir());
+        std::fs::create_dir_all(&folder).unwrap();
+        std::fs::write(folder.join("weights.gguf"), vec![0u8; 1000]).unwrap();
+        let choice = pipeline.readiness().models.into_iter().find(|model| model.own_bytes > 0).unwrap();
+
+        assert_eq!(pipeline.delete_model(choice.id), Ok(1000));
+        assert!(pipeline.readiness().models.iter().all(|model| model.own_bytes == 0));
+        assert!(pipeline.delete_model("no-such-model").is_err());
+    }
+
+    /// Two stretches of noise loud enough to count as speech, with a long pause between.
+    fn two_stretches_of_speech(path: &std::path::Path) {
+        let spec = hound::WavSpec {
+            channels: 1,
+            sample_rate: TARGET_RATE,
+            bits_per_sample: 16,
+            sample_format: hound::SampleFormat::Int,
+        };
+        let mut writer = hound::WavWriter::create(path, spec).unwrap();
+        let mut seed: u32 = 7;
+        let rate = TARGET_RATE as usize;
+        for i in 0..9 * rate {
+            let loud = (rate..3 * rate).contains(&i) || (6 * rate..8 * rate).contains(&i);
+            seed = seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            let noise = (seed >> 16) as i16 as i32 / 4;
+            writer.write_sample(if loud { noise as i16 } else { 0 }).unwrap();
+        }
+        writer.finalize().unwrap();
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_speech_service_transcribes_without_any_model_on_this_computer() {
+        use wiremock::matchers::{header, method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        let service = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/audio/transcriptions"))
+            .and(header("authorization", "Bearer asr-key"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({ "text": "Hello there." })))
+            .expect(2)
+            .mount(&service)
+            .await;
+
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path().to_path_buf()).unwrap();
+        let mut settings = store.settings();
+        settings.asr_provider = AsrProvider::Service;
+        settings.asr_service_url = format!("{}/v1", service.uri());
+        settings.asr_service_model = "whisper-test".to_string();
+        settings.asr_service_key = "asr-key".to_string();
+        settings.auto_minutes = false;
+        store.save_settings(&settings).unwrap();
+        let meeting = store.create_meeting(chrono::Local::now(), "discussion").unwrap();
+        two_stretches_of_speech(&store.audio_path(&meeting.id));
+        let pipeline = Pipeline {
+            store: store.clone(),
+            // No speech engine and no speech model anywhere: the service needs neither.
+            bundled_server_dirs: Vec::new(),
+        };
+        assert!(pipeline.readiness().speech_ready);
+
+        pipeline.process(&meeting.id, &|_| {}).await;
+
+        let meeting = store.meeting(&meeting.id).unwrap();
+        assert_eq!(meeting.status, Status::Done, "{:?}", meeting.error);
+        let transcript = store.transcript(&meeting.id).unwrap();
+        assert_eq!(transcript.engine, "whisper-test");
+        assert_eq!(transcript.segments.len(), 2);
+        assert!(transcript.segments.iter().all(|segment| segment.text == "Hello there."));
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn a_speech_service_that_is_not_set_up_says_so() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path().to_path_buf()).unwrap();
+        let mut settings = store.settings();
+        settings.asr_provider = AsrProvider::Service;
+        store.save_settings(&settings).unwrap();
+        let meeting = store.create_meeting(chrono::Local::now(), "discussion").unwrap();
+        two_stretches_of_speech(&store.audio_path(&meeting.id));
+        let pipeline = Pipeline {
+            store: store.clone(),
+            bundled_server_dirs: Vec::new(),
+        };
+        assert!(!pipeline.readiness().speech_ready);
+
+        pipeline.process(&meeting.id, &|_| {}).await;
+
+        let meeting = store.meeting(&meeting.id).unwrap();
+        assert_eq!(meeting.status, Status::Failed);
+        assert!(meeting.error.unwrap().starts_with("No speech service is set up"));
+        assert!(pipeline.waiting_for_model().is_empty());
     }
 
     /// Needs `llama-server`, the Qwen3-ASR files and a WAV recording on this machine. With

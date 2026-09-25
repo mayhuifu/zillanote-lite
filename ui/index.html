@@ -87,54 +87,94 @@
 
     <dialog id="settings">
       <form method="dialog" id="settings-form">
-        <h2>Settings</h2>
+        <!-- The first page holds what is changed now and then; each setup row opens a page of its own. -->
+        <section class="page" data-page="main">
+          <h2>Settings</h2>
 
-        <h3>Language model</h3>
-        <p class="help">Any OpenAI-compatible endpoint: LM Studio or Ollama on this Mac, or a hosted API with a key.</p>
-        <label>Endpoint URL <input id="llm-url" type="url" placeholder="http://localhost:1234/v1" /></label>
-        <label>Model <input id="llm-model" type="text" placeholder="qwen/qwen3.8-27b" /></label>
-        <label>API key <input id="llm-key" type="password" placeholder="Not needed for a local model" autocomplete="off" /></label>
+          <h3>Recording</h3>
+          <label class="check"><input id="notice-calls" type="checkbox" /> Flash the record button when a call starts</label>
+          <label class="check"><input id="stop-after-call" type="checkbox" /> Stop recording half a minute after the call ends</label>
+          <label class="check"><input id="system-audio" type="checkbox" /> Record the computer's sound too, so the other side of a call is in the transcript</label>
+          <p class="help">If the other side is missing from a transcript, allow ZillaNote under Privacy &amp; Security → Screen &amp; System Audio Recording → System Audio Recording Only. <button type="button" id="open-system-audio" class="text link">Open that page</button></p>
 
-        <h3>Minutes</h3>
-        <label class="check"><input id="auto-minutes" type="checkbox" /> Write the minutes by themselves as soon as the transcript is ready</label>
-        <label>Default template <select id="default-template"></select></label>
-        <label>
-          System prompt
-          <textarea id="system-prompt" rows="14" spellcheck="false"></textarea>
-        </label>
-        <p class="help">The rules, and under "Template" the shape of the minutes, spelled out: change the sections there. The template chosen for a meeting only says how it differs from that shape.</p>
-        <button type="button" id="reset-prompt" class="text">Reset to the default prompt</button>
+          <h3>Minutes</h3>
+          <label class="check"><input id="auto-minutes" type="checkbox" /> Write the minutes as soon as the transcript is ready</label>
+          <label>Default template <select id="default-template"></select></label>
 
-        <h3>Email the minutes</h3>
-        <p class="help">Minutes are sent to this one address as soon as they are written. Leave it empty to send nothing.</p>
-        <label>Send minutes to <input id="email-to" type="email" placeholder="you@example.com" /></label>
-        <label>Send from (your mail account) <input id="email-from" type="email" placeholder="you@gmail.com, you@qq.com, …" /></label>
-        <label>That account's app password <input id="email-password" type="password" autocomplete="off" placeholder="Gmail, iCloud, Yahoo: app password. QQ, 163: authorization code" /></label>
-        <label id="email-server-row" hidden>Outgoing mail server <input id="email-server" type="text" placeholder="smtp.example.com:465" /></label>
-        <button type="button" id="test-email" class="text">Send a test email</button>
-        <p class="help result" id="test-email-result" hidden></p>
+          <h3>Setup</h3>
+          <div class="setup">
+            <button type="button" data-open="speech"><span>Speech recognition</span><small id="status-speech"></small></button>
+            <button type="button" data-open="llm"><span>Language model</span><small id="status-llm"></small></button>
+            <button type="button" data-open="prompt"><span>Prompt and vocabulary</span><small id="status-prompt"></small></button>
+            <button type="button" data-open="email"><span>Email the minutes</span><small id="status-email"></small></button>
+            <button type="button" data-open="voices"><span>Remembered voices</span><small id="status-voices"></small></button>
+          </div>
+        </section>
 
-        <h3>Recording</h3>
-        <label class="check"><input id="notice-calls" type="checkbox" /> Flash the record button when a call starts: Teams, Zoom, or any program that opens the microphone</label>
-        <label class="check"><input id="stop-after-call" type="checkbox" /> Stop the recording half a minute after the call ends, after a countdown you can cancel</label>
-        <p class="help">The system says which programs have the microphone open; nothing is installed and no permission is asked. A program counts as a call after a minute, so dictation and voice messages change nothing.</p>
-        <label class="check"><input id="system-audio" type="checkbox" /> Record the computer's sound too, so the other side of a Teams or Zoom call is in the transcript</label>
-        <p class="help">macOS asks for permission the first time. If the other side is missing from a transcript, allow ZillaNote under Privacy &amp; Security → Screen &amp; System Audio Recording → System Audio Recording Only. <button type="button" id="open-system-audio" class="text link">Open that page</button></p>
+        <section class="page" data-page="speech" hidden>
+          <h2><button type="button" class="back" aria-label="Back to Settings">‹</button>Speech recognition</h2>
+          <label class="check"><input type="radio" name="asr-provider" value="local" /> <span><b>On this computer</b><small>Qwen3-ASR. The audio stays on this computer.</small></span></label>
+          <label class="check"><input type="radio" name="asr-provider" value="service" /> <span><b>A speech service</b><small>Any service with OpenAI's transcription API: OpenAI, Groq, SiliconFlow, your own Whisper server. Each stretch of speech is sent to it.</small></span></label>
 
-        <h3>Remembered voices</h3>
-        <p class="help">Name a speaker in a meeting's transcript, and ZillaNote knows the voice in later meetings. Voices are told apart by pyannote's segmentation-3.0 (MIT) and WeSpeaker's ResNet34 embedding as packaged by pyannote (CC BY 4.0), on this computer.</p>
-        <ul id="voices" class="voices"></ul>
+          <div id="asr-local" class="group">
+            <p class="help" id="models-help">The bigger the model, the fewer mis-heard words; it needs the memory shown only while a recording is being transcribed.</p>
+            <div id="models" class="models"></div>
+          </div>
 
-        <h3>Speech model</h3>
-        <p class="help" id="models-help">Transcription runs on this Mac. The bigger the model, the fewer mis-heard words; it needs the memory shown only while a recording is being transcribed.</p>
-        <div id="models" class="models"></div>
+          <div id="asr-service" class="group" hidden>
+            <label>Endpoint URL <input id="asr-url" type="url" placeholder="https://api.openai.com/v1" /></label>
+            <label>Model <input id="asr-model-name" type="text" placeholder="whisper-1" /></label>
+            <label>API key <input id="asr-key" type="password" placeholder="Not needed for a server of your own" autocomplete="off" /></label>
+            <button type="button" id="test-asr" class="text">Test the service</button>
+            <p class="help result" id="test-asr-result" hidden></p>
+          </div>
+        </section>
 
-        <h3>Recognition</h3>
-        <label>
-          Names and terms to prefer
-          <textarea id="vocabulary" rows="3" placeholder="One per line: people, products, acronyms" spellcheck="false"></textarea>
-        </label>
-        <div id="readiness" class="readiness"></div>
+        <section class="page" data-page="llm" hidden>
+          <h2><button type="button" class="back" aria-label="Back to Settings">‹</button>Language model</h2>
+          <p class="help">Writes the minutes. Any OpenAI-compatible endpoint: LM Studio or Ollama on this computer, or a hosted API with a key.</p>
+          <label>Endpoint URL <input id="llm-url" type="url" placeholder="http://localhost:1234/v1" /></label>
+          <label>Model <input id="llm-model" type="text" placeholder="qwen/qwen3.8-27b" /></label>
+          <label>API key <input id="llm-key" type="password" placeholder="Not needed for a local model" autocomplete="off" /></label>
+        </section>
+
+        <section class="page" data-page="prompt" hidden>
+          <h2><button type="button" class="back" aria-label="Back to Settings">‹</button>Prompt and vocabulary</h2>
+          <label>
+            System prompt
+            <textarea id="system-prompt" rows="14" spellcheck="false"></textarea>
+          </label>
+          <p class="help">The rules, and under "Template" the shape of the minutes, spelled out: change the sections there. The template chosen for a meeting only says how it differs from that shape.</p>
+          <button type="button" id="reset-prompt" class="text">Reset to the default prompt</button>
+          <label>
+            Names and terms to prefer
+            <textarea id="vocabulary" rows="4" placeholder="One per line: people, products, acronyms" spellcheck="false"></textarea>
+          </label>
+          <p class="help">Given to the speech recognizer and to the language model, so they are spelled right.</p>
+        </section>
+
+        <section class="page" data-page="email" hidden>
+          <h2><button type="button" class="back" aria-label="Back to Settings">‹</button>Email the minutes</h2>
+          <p class="help">Minutes are sent to this one address as soon as they are written. Leave it empty to send nothing.</p>
+          <label>Send minutes to <input id="email-to" type="email" placeholder="you@example.com" /></label>
+          <label>Send from (your mail account) <input id="email-from" type="email" placeholder="you@gmail.com, you@qq.com, …" /></label>
+          <label>That account's app password <input id="email-password" type="password" autocomplete="off" placeholder="Gmail, iCloud, Yahoo: app password. QQ, 163: authorization code" /></label>
+          <label id="email-server-row" hidden>Outgoing mail server <input id="email-server" type="text" placeholder="smtp.example.com:465" /></label>
+          <button type="button" id="test-email" class="text">Send a test email</button>
+          <p class="help result" id="test-email-result" hidden></p>
+        </section>
+
+        <section class="page" data-page="voices" hidden>
+          <h2><button type="button" class="back" aria-label="Back to Settings">‹</button>Remembered voices</h2>
+          <p class="help">Name a speaker once, and ZillaNote knows the voice in later meetings and names it by itself.</p>
+          <ol class="steps">
+            <li>Open a meeting and choose its <b>Transcript</b> tab.</li>
+            <li>Above the transcript, click a speaker, such as <span class="speaker">Speaker 1 · 04:12</span></li>
+            <li>Type the name and press Enter. To use the name in the minutes too, press <b>Rewrite minutes</b> under the meeting.</li>
+          </ol>
+          <ul id="voices" class="voices"></ul>
+          <p class="help">A voice named wrongly can be renamed the same way, or forgotten here. Voices are told apart on this computer by pyannote's segmentation-3.0 (MIT) and WeSpeaker's ResNet34 embedding as packaged by pyannote (CC BY 4.0).</p>
+        </section>
 
         <menu>
           <button type="button" id="cancel-settings" class="text">Cancel</button>
