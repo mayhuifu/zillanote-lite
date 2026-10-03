@@ -60,6 +60,7 @@ cargo test -p engine live_system_audio -- --ignored --nocapture   # plays a soun
 cargo test -p engine live_microphone_users -- --ignored --nocapture   # prints who holds the microphone, ten seconds long
 cargo test -p engine live_recording -- --ignored --nocapture      # plays 8 s of noise, records both channels
 cargo test -p engine live_chatgpt -- --ignored --nocapture        # signs in with ChatGPT in the browser, asks one model one line
+ZILLANOTE_UPGRADE_FROM=<data folder> cargo test -p engine live_upgrade -- --ignored --nocapture   # a real folder's settings and voices, read from copies
 ```
 
 ## Layout

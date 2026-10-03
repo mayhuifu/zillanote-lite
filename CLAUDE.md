@@ -89,6 +89,12 @@ thread reads `Store::settings_without_secrets()`, because `settings()` goes to t
 - **LF everywhere** (`.gitattributes`): a CRLF checkout breaks that byte-for-byte test on Windows.
 - **Renamed model or setting ids** stay readable through serde `alias` plus strum `serialize`
   (see `Qwen3AsrModel`). Never list a name in both `serialize` and `to_string`.
+- **An upgrade keeps everything the user set up.** `Settings` is `#[serde(default)]`, so a new
+  field needs a default that changes nothing for an existing user; never rename or retype a
+  field without an alias. `SETTINGS_0_3_1` in `store.rs` is a file as 0.3.1 wrote it, and a
+  test reads and re-saves it; add the file of each release that changes `Settings`. Before a
+  release, run `live_upgrade` against the real data folder (from copies). A file that does not
+  parse is moved aside (`*.unreadable-<time>.json`), never saved over.
 - **Secrets:** the fields kept outside `settings.json` are listed once, in
   `Settings::secrets_mut()` (LLM key, mail password, speech-service key); a new secret goes
   there. The ChatGPT sign-in is apart from Settings on purpose: its refresh token changes on

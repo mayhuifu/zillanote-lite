@@ -280,10 +280,7 @@ impl Store {
     }
 
     fn settings_on_disk(&self) -> Settings {
-        std::fs::read_to_string(self.root.join("settings.json"))
-            .ok()
-            .and_then(|text| serde_json::from_str(&text).ok())
-            .unwrap_or_default()
+        read_json_or_default(&self.root.join("settings.json"))
     }
 
     pub fn save_settings(&self, settings: &Settings) -> Result<(), String> {
@@ -351,10 +348,7 @@ impl Store {
 
     /// What `chatgpt.json` itself holds: tokens only where no keychain took them.
     fn chatgpt_file(&self) -> ChatGpt {
-        std::fs::read_to_string(self.root.join("chatgpt.json"))
-            .ok()
-            .and_then(|text| serde_json::from_str(&text).ok())
-            .unwrap_or_default()
+        read_json_or_default(&self.root.join("chatgpt.json"))
     }
 
     /// No tokens means none: they are removed from wherever they were kept. Tokens the keychain
@@ -489,10 +483,7 @@ impl Store {
     }
 
     pub fn voices(&self) -> Vec<Voice> {
-        std::fs::read_to_string(self.root.join("voices.json"))
-            .ok()
-            .and_then(|text| serde_json::from_str(&text).ok())
-            .unwrap_or_default()
+        read_json_or_default(&self.root.join("voices.json"))
     }
 
     pub fn save_minutes(&self, id: &str, minutes: &str) -> Result<(), String> {
@@ -501,6 +492,26 @@ impl Store {
 
     pub fn minutes(&self, id: &str) -> Option<String> {
         std::fs::read_to_string(self.meeting_dir(id).join("minutes.md")).ok()
+    }
+}
+
+/// The user's settings, voices and sign-in: the defaults when there is no file yet. A file that
+/// is there but cannot be read (damaged, or written by a newer version in a shape this one
+/// does not know) is moved aside, never written over: the next save would otherwise replace
+/// what the user set up with the defaults for good. It can be put back by hand.
+fn read_json_or_default<T: serde::de::DeserializeOwned + Default>(path: &Path) -> T {
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return T::default();
+    };
+    match serde_json::from_str(&text) {
+        Ok(value) => value,
+        Err(error) => {
+            let stamp = chrono::Local::now().format("%Y%m%d-%H%M%S");
+            let aside = path.with_extension(format!("unreadable-{stamp}.json"));
+            tracing::error!(path = %path.display(), %error, aside = %aside.display(), "file_unreadable_moved_aside");
+            let _ = std::fs::rename(path, &aside);
+            T::default()
+        }
     }
 }
 
@@ -614,6 +625,131 @@ mod tests {
         let file = std::fs::read_to_string(dir.path().join("settings.json")).unwrap();
         assert!(!file.contains("sk-secret") && !file.contains("asr-secret"), "{file}");
         assert_eq!(store.settings(), secret_settings());
+    }
+
+    /// `settings.json` as 0.3.1 writes it, with a prompt of the user's own: everything in it
+    /// must come through an upgrade as it was, and a save must keep it.
+    const SETTINGS_0_3_1: &str = r#"{
+  "llm_base_url": "https://api.example.com/v1",
+  "llm_api_key": "",
+  "llm_model": "example-model",
+  "system_prompt": "My own rules.\n\nTemplate: decisions first.",
+  "default_template": "business",
+  "vocabulary": ["U300", "RedCap", "Zillanote"],
+  "max_chars_per_call": 30000,
+  "email": { "to": "me@example.com", "from": "me@qq.com", "password": "", "server": "" },
+  "record_system_audio": false,
+  "auto_minutes": true,
+  "notice_calls": false,
+  "stop_when_call_ends": true,
+  "asr_model": "qwen3-asr-1.7b",
+  "asr_provider": "local",
+  "asr_service_url": "",
+  "asr_service_model": "",
+  "asr_service_key": ""
+}"#;
+
+    #[test]
+    fn settings_of_the_previous_version_come_through_an_upgrade_and_a_save_unchanged() {
+        let (dir, store) = store();
+        std::fs::write(dir.path().join("settings.json"), SETTINGS_0_3_1).unwrap();
+
+        let settings = store.settings();
+
+        assert_eq!(settings.llm_base_url, "https://api.example.com/v1");
+        assert_eq!(settings.llm_model, "example-model");
+        assert_eq!(settings.system_prompt, "My own rules.\n\nTemplate: decisions first.");
+        assert_eq!(settings.default_template, "business");
+        assert_eq!(settings.vocabulary, ["U300", "RedCap", "Zillanote"]);
+        assert_eq!(settings.max_chars_per_call, 30000);
+        assert_eq!((settings.email.to.as_str(), settings.email.from.as_str()), ("me@example.com", "me@qq.com"));
+        assert!(!settings.record_system_audio && !settings.notice_calls);
+        assert_eq!(settings.asr_model, qwen3_asr::Qwen3AsrModel::Large);
+        // What is new starts where it changes nothing: the user's own model writes the minutes.
+        assert_eq!(settings.llm_provider, LlmProvider::Compatible);
+        assert!(settings.chatgpt_model.is_empty() && !settings.asr_model_picked);
+
+        // Saved again (any change in Settings does that), every old value is still there.
+        store.save_settings(&settings).unwrap();
+        let old: serde_json::Value = serde_json::from_str(SETTINGS_0_3_1).unwrap();
+        let new: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(dir.path().join("settings.json")).unwrap()).unwrap();
+        for (key, value) in old.as_object().unwrap() {
+            assert_eq!(&new[key], value, "{key}");
+        }
+    }
+
+    #[test]
+    fn a_settings_file_this_version_cannot_read_is_set_aside_not_written_over() {
+        let (dir, store) = store();
+        std::fs::write(dir.path().join("settings.json"), r#"{"vocabulary": "not a list"}"#).unwrap();
+
+        let settings = store.settings();
+        store.save_settings(&settings).unwrap();
+
+        let aside: Vec<_> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().into_string().unwrap())
+            .filter(|name| name.starts_with("settings.unreadable-"))
+            .collect();
+        assert_eq!(aside.len(), 1, "{aside:?}");
+        assert_eq!(std::fs::read_to_string(dir.path().join(&aside[0])).unwrap(), r#"{"vocabulary": "not a list"}"#);
+    }
+
+    /// Reads a real data folder's settings and voices the way this version does, from copies,
+    /// and checks that nothing in them is lost, including after a save. The folder is only read:
+    ///
+    /// ZILLANOTE_UPGRADE_FROM=~/Library/Application\ Support/com.zillanote.lite \
+    ///   cargo test -p engine live_upgrade -- --ignored --nocapture
+    #[test]
+    #[ignore = "needs ZILLANOTE_UPGRADE_FROM, a data folder of an earlier version"]
+    fn live_upgrade_keeps_the_settings_and_voices_of_a_real_folder() {
+        let from = PathBuf::from(std::env::var("ZILLANOTE_UPGRADE_FROM").expect("ZILLANOTE_UPGRADE_FROM"));
+        let (dir, store) = store();
+        for name in ["settings.json", "voices.json"] {
+            if from.join(name).exists() {
+                std::fs::copy(from.join(name), dir.path().join(name)).unwrap();
+            }
+        }
+        let old_text = std::fs::read_to_string(dir.path().join("settings.json")).unwrap();
+        let old: serde_json::Value = serde_json::from_str(&old_text).unwrap();
+        let old_voices: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.path().join("voices.json")).unwrap_or("[]".into())).unwrap();
+
+        let settings = store.settings();
+        let voices = store.voices();
+        store.save_settings(&settings).unwrap();
+        store.save_voices(&voices).unwrap();
+
+        let new: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.path().join("settings.json")).unwrap()).unwrap();
+        let prompt_moved_on = PREVIOUS_SYSTEM_PROMPTS.iter().any(|previous| previous.trim() == old["system_prompt"].as_str().unwrap_or("").trim());
+        for (key, value) in old.as_object().unwrap() {
+            if key == "system_prompt" && prompt_moved_on {
+                continue; // an untouched earlier default moves on to the new one, by design
+            }
+            assert_eq!(&new[key], value, "{key} changed");
+        }
+        let new_voices: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(dir.path().join("voices.json")).unwrap()).unwrap();
+        assert_eq!(new_voices, old_voices, "the voices changed");
+        assert!(!std::fs::read_dir(dir.path()).unwrap().any(|entry| {
+            entry.unwrap().file_name().to_string_lossy().contains("unreadable")
+        }));
+        let prompt = if prompt_moved_on {
+            "an earlier default, moved on to the new one"
+        } else if settings.system_prompt.trim() == DEFAULT_SYSTEM_PROMPT.trim() {
+            "the default"
+        } else {
+            "the user's own, kept"
+        };
+        println!(
+            "{} settings kept; system prompt: {prompt}; {} terms; {} voices; email to set: {}; minutes by: {:?}",
+            old.as_object().unwrap().len(),
+            settings.vocabulary.len(),
+            voices.len(),
+            !settings.email.to.is_empty(),
+            settings.llm_provider,
+        );
     }
 
     #[test]
