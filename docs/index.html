@@ -140,6 +140,22 @@
   .gains h3 { margin: 0 0 6px; font-size: 1.125rem; font-weight: 600; }
   .gains p { margin: 0; color: var(--slate); }
 
+  /* Sign in with ChatGPT: what it is, next to the button as it looks in the app's Settings. */
+  .plan { display: grid; grid-template-columns: minmax(0, 6fr) minmax(0, 5fr); gap: 48px; align-items: center; max-width: 980px; }
+  .plan .lead-in { margin: -12px 0 24px; color: var(--slate); max-width: 34em; }
+  .plan ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 16px; }
+  .plan li { padding-left: 20px; border-left: 2px solid var(--line); }
+  .plan li strong { display: block; font-weight: 600; }
+  .plan li span { color: var(--slate); }
+  .plan .fine { margin: 24px 0 0; font-size: 0.9375rem; color: var(--slate); max-width: 34em; }
+  .settings-card { background: var(--surface); border: 1px solid var(--line); border-radius: 20px; padding: 26px 28px; }
+  .settings-card .where { margin: 0 0 4px; font-size: 0.8125rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--slate); }
+  .settings-card .title { margin: 0 0 18px; font-weight: 600; font-size: 1.125rem; }
+  .settings-card .say { margin: 0 0 20px; font-size: 0.9375rem; color: var(--slate); }
+  .chatgpt-button { display: inline-flex; align-items: center; gap: 10px; padding: 11px 22px; border-radius: 99px; background: #0d0d0d; border: 1px solid rgba(255, 255, 255, 0.18); color: #fff; font-weight: 600; font-size: 1rem; }
+  .chatgpt-button img { width: 20px; height: 20px; }
+  .settings-card .using { margin: 18px 0 0; font-size: 0.875rem; color: var(--slate); }
+
   ol.steps { list-style: none; margin: 0; padding: 0; counter-reset: step; max-width: 720px; }
   ol.steps li { counter-increment: step; position: relative; padding: 0 0 26px 56px; }
   ol.steps li::before {
@@ -167,10 +183,12 @@
 
   @media (max-width: 860px) {
     .hero .wrap { grid-template-columns: 1fr; gap: 44px; padding-top: 16px; padding-bottom: 64px; }
+    .plan { grid-template-columns: 1fr; gap: 32px; }
   }
   @media (max-width: 600px) {
     .wrap { padding: 0 16px; }
     .gains { grid-template-columns: 1fr; gap: 24px; }
+    .settings-card { padding: 22px 20px; }
     .get { width: 100%; }
     section.band .wrap { padding-top: 48px; padding-bottom: 48px; }
   }
@@ -197,7 +215,8 @@
       <div>
         <h1>Meet.<br>Listen.<br>Done.</h1>
         <p class="lead">ZillaNote records your meeting, writes down who said what, and mails you
-          the minutes. Your recordings stay on your computer.</p>
+          the minutes. Your recordings stay on your computer. The minutes can come from the
+          ChatGPT plan you already have.</p>
 
         <p class="elsewhere" data-show="mobile" hidden>ZillaNote runs on Mac and Windows. Open this
           page on your computer to download it.</p>
@@ -249,13 +268,46 @@
         </div>
         <div>
           <h3>Your model, your costs</h3>
-          <p>The minutes come from the language model you choose: one on your own computer, free
-            and private, or any OpenAI-compatible service with your own key.</p>
+          <p>The minutes come from the model you choose: your ChatGPT plan, with one sign-in and
+            no API key; one on your own computer, free and private; or any OpenAI-compatible
+            service with your own key.</p>
         </div>
         <div>
           <h3>Nothing to do afterwards</h3>
           <p>Press record when the meeting starts. The transcript, the speaker names and the
             minutes arrive by themselves, in the app and in your inbox.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band" id="chatgpt">
+    <div class="wrap">
+      <div class="plan">
+        <div>
+          <h2>Use your ChatGPT plan</h2>
+          <p class="lead-in">Already pay for ChatGPT? Sign in once, and ZillaNote writes your
+            minutes on the plan you have. No API key, and nothing more to pay.</p>
+          <ul>
+            <li><strong>One sign-in, in your browser</strong>
+              <span>ZillaNote never sees your password. Sign out whenever you like.</span></li>
+            <li><strong>The models your account offers</strong>
+              <span>Pick the one that writes the minutes from the list in Settings.</span></li>
+            <li><strong>You set the limit</strong>
+              <span>See and cap what ZillaNote uses of your plan under Manage usage, in your
+                ChatGPT settings.</span></li>
+          </ul>
+          <p class="fine">Recording and transcription still happen on your computer. Only the
+            transcript goes to OpenAI, under your own account, to be turned into minutes.
+            Prefer a model on your own computer? That stays one click away.</p>
+        </div>
+        <div class="settings-card" aria-label="How it looks in ZillaNote's Settings">
+          <p class="where">In ZillaNote, Settings</p>
+          <p class="title">Language model</p>
+          <p class="say">Complete eligible AI requests in this app with usage included in your
+            ChatGPT plan or credits balance.</p>
+          <span class="chatgpt-button" aria-hidden="true"><img src="chatgpt-logo.svg" alt="">Continue with ChatGPT</span>
+          <p class="using">Using ChatGPT plan · Manage usage</p>
         </div>
       </div>
     </div>
@@ -281,7 +333,8 @@
         </li>
         <li>
           <h3>Choose who writes the minutes</h3>
-          <p>In Settings, enter a language model: one on your computer, such as LM Studio or Ollama,
+          <p>In Settings, under Language model, press Continue with ChatGPT to use your ChatGPT
+            plan, or enter a model of your own: one on your computer, such as LM Studio or Ollama,
             or a hosted service with your key. Add a mail account if you want the minutes mailed to
             you. Then press record.</p>
         </li>
@@ -292,8 +345,11 @@
 
 <footer>
   <div class="wrap">
-    <p>Only the transcript leaves your computer, and only for the language model you set; the
-      minutes go only to the mail server you set.</p>
+    <p>Only the transcript leaves your computer, and only for the language model you set (your
+      ChatGPT account, a service of your choice, or none at all with a model on your computer);
+      the minutes go only to the mail server you set.</p>
+    <p>ChatGPT and the ChatGPT logo are trademarks of OpenAI. ZillaNote is not made by or
+      affiliated with OpenAI; it uses OpenAI's Sign in with ChatGPT.</p>
     <p>ZillaNote is free and open source under the MIT or Apache 2.0 license.
       <a href="https://github.com/mayhuifu/zillanote-lite">Source code, issues and release notes on GitHub</a>.</p>
     <p>If ZillaNote saves you time, <a href="https://github.com/mayhuifu/zillanote-lite">a star on GitHub</a> helps others find it.</p>

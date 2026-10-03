@@ -55,6 +55,9 @@ and mails them to you. The recording never leaves your computer.
   its own.
 - **Who said what.** Every line of the transcript has its speaker. Name a voice once and it
   is recognized in later meetings.
+- **Minutes on your ChatGPT plan.** Sign in with ChatGPT once and the minutes are written on
+  the plan you already pay for: no API key, and a usage limit you set yourself. Or use a model
+  on your own computer, or any OpenAI-compatible service.
 - **Minutes your way.** Topics, decisions, next steps with their owners, and what was left
   open, on one page. Pick a template (discussion, business meeting, interview) or edit the
   system prompt to set the format, focus and tone.
