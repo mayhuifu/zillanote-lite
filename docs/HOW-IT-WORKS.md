@@ -13,7 +13,9 @@ each part does in detail; [`DEVELOPMENT.md`](DEVELOPMENT.md) says how to build a
   one for meetings that mix English and Mandarin; 2.8 GB to download, 3.5 GB of memory) and
   0.6B at 4 bits (the default: a 0.9 GB download and 1.6 GB of memory while transcribing).
   Settings that name one of the two in-between choices of earlier versions are read as the
-  nearest of these. A downloaded model has a Delete button, to give the space back after
+  nearest of these. Until you pick a model, one already on this computer (left by an earlier
+  version, or in LM Studio's folder) is used, rather than downloading the default; a model
+  you pick is downloaded if it is not here. A downloaded model has a Delete button, to give the space back after
   switching to the other one (or to a service); only ZillaNote's own copy is deleted, never
   files LM Studio keeps, and not while a meeting is being worked on or a download runs.
 - **A speech service instead:** Settings → Speech recognition can name a service with

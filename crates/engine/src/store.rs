@@ -117,8 +117,12 @@ pub struct Settings {
     pub notice_calls: bool,
     /// Stop the recording half a minute after the call program lets the microphone go.
     pub stop_when_call_ends: bool,
-    /// Which of the speech models transcribes, when that happens on this computer.
+    /// Which of the speech models transcribes, when that happens on this computer; see
+    /// [`Settings::speech_model`] for one the user has not picked.
     pub asr_model: qwen3_asr::Qwen3AsrModel,
+    /// The user picked `asr_model` in Settings. Until then it is only where the app started,
+    /// and a model already on this computer is used instead of downloading it.
+    pub asr_model_picked: bool,
     pub asr_provider: AsrProvider,
     /// The speech service, when that is the choice: its OpenAI-style root, for example
     /// `https://api.openai.com/v1`, the model to ask for, and the key.
@@ -128,6 +132,22 @@ pub struct Settings {
 }
 
 impl Settings {
+    /// The speech model that transcribes on this computer. One the user picked is that one,
+    /// here or not: picking a model is asking for it. Otherwise the one in the settings if it
+    /// is here, else one that is (left from an earlier version, or in LM Studio's folder), and
+    /// only when none is, the one in the settings, to download. Nobody is asked to download
+    /// the default when a model they have works.
+    pub fn speech_model(&self, models_dir: &Path) -> qwen3_asr::Qwen3AsrModel {
+        self.speech_model_among(|model| model.locate_files(models_dir).is_some())
+    }
+
+    fn speech_model_among(&self, is_here: impl Fn(qwen3_asr::Qwen3AsrModel) -> bool) -> qwen3_asr::Qwen3AsrModel {
+        if self.asr_model_picked || is_here(self.asr_model) {
+            return self.asr_model;
+        }
+        qwen3_asr::Qwen3AsrModel::all().iter().copied().find(|model| is_here(*model)).unwrap_or(self.asr_model)
+    }
+
     /// Whether a speech service is named well enough to be asked.
     pub fn asr_service_configured(&self) -> bool {
         !self.asr_service_url.trim().is_empty() && !self.asr_service_model.trim().is_empty()
@@ -162,6 +182,7 @@ impl Default for Settings {
             notice_calls: true,
             stop_when_call_ends: true,
             asr_model: qwen3_asr::Qwen3AsrModel::default(),
+            asr_model_picked: false,
             asr_provider: AsrProvider::Local,
             asr_service_url: String::new(),
             asr_service_model: String::new(),
@@ -593,6 +614,32 @@ mod tests {
         let file = std::fs::read_to_string(dir.path().join("settings.json")).unwrap();
         assert!(!file.contains("sk-secret") && !file.contains("asr-secret"), "{file}");
         assert_eq!(store.settings(), secret_settings());
+    }
+
+    #[test]
+    fn a_speech_model_already_here_is_used_rather_than_downloading_the_default() {
+        use qwen3_asr::Qwen3AsrModel::{Large, SmallQ4};
+        let settings = Settings::default();
+        assert_eq!(settings.asr_model, SmallQ4);
+
+        // Only the 1.7B is here (an earlier version's download, or LM Studio's).
+        assert_eq!(settings.speech_model_among(|model| model == Large), Large);
+        // Both, or only the default: the default. Neither: the default, to download.
+        assert_eq!(settings.speech_model_among(|_| true), SmallQ4);
+        assert_eq!(settings.speech_model_among(|model| model == SmallQ4), SmallQ4);
+        assert_eq!(settings.speech_model_among(|_| false), SmallQ4);
+    }
+
+    #[test]
+    fn a_speech_model_the_user_picked_is_kept_even_when_another_is_here() {
+        use qwen3_asr::Qwen3AsrModel::{Large, SmallQ4};
+        let settings = Settings {
+            asr_model: SmallQ4,
+            asr_model_picked: true,
+            ..Settings::default()
+        };
+
+        assert_eq!(settings.speech_model_among(|model| model == Large), SmallQ4);
     }
 
     #[test]

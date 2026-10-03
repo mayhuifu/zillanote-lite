@@ -672,7 +672,7 @@ fn download_models(app: AppHandle, state: State<'_, App>) -> Result<(), String> 
     tauri::async_runtime::spawn(async move {
         let settings = store.settings();
         // A speech service needs no speech model here; the speaker models are still wanted.
-        let speech_model = (settings.asr_provider == AsrProvider::Local).then_some(settings.asr_model);
+        let speech_model = (settings.asr_provider == AsrProvider::Local).then(|| settings.speech_model(&store.models_dir()));
         let packages = download::missing_packages(&store.models_dir(), &store.speaker_models_dir(), speech_model);
         let publish = |status: DownloadStatus| {
             *shared.status.lock().unwrap() = status.clone();

@@ -153,8 +153,9 @@ impl Pipeline {
         let (client, mut server, engine) = match server_config {
             Some(config) => {
                 let server = self.start_server(config).await?;
-                let client = Qwen3AsrClient::new(&server.base_url(), settings.asr_model).map_err(|e| e.to_string())?;
-                (client, Some(server), settings.asr_model.as_str().to_string())
+                let model = settings.speech_model(&self.store.models_dir());
+                let client = Qwen3AsrClient::new(&server.base_url(), model).map_err(|e| e.to_string())?;
+                (client, Some(server), model.as_str().to_string())
             }
             None => {
                 let client = speech_service(&settings)?;
@@ -352,7 +353,8 @@ impl Pipeline {
 
     /// What the recognizer needs to start, or what is missing.
     fn server_config(&self) -> Result<LlamaServerConfig, String> {
-        let files = self.store.settings().asr_model.locate_files(&self.store.models_dir()).ok_or_else(|| {
+        let models_dir = self.store.models_dir();
+        let files = self.store.settings().speech_model(&models_dir).locate_files(&models_dir).ok_or_else(|| {
             format!("{MODEL_MISSING} Download it on the home view: this recording is transcribed as soon as it is here.")
         })?;
         let binary = find_llama_server(&self.bundled_server_dirs).ok_or_else(describe_missing_binary)?;
@@ -570,7 +572,7 @@ impl Pipeline {
     pub fn readiness(&self) -> Readiness {
         let models_dir = self.store.models_dir();
         let settings = self.store.settings();
-        let model = settings.asr_model;
+        let model = settings.speech_model(&models_dir);
         let files = model.locate_files(&models_dir);
         let server = find_llama_server(&self.bundled_server_dirs);
         let local = settings.asr_provider == AsrProvider::Local;

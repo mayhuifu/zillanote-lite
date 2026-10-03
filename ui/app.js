@@ -409,12 +409,18 @@ function renderModels(ready) {
       });
       option.appendChild(remove);
     }
-    option.querySelector("input").addEventListener("change", renderSetupStatus);
+    option.querySelector("input").addEventListener("change", () => {
+      modelPicked = true;
+      renderSetupStatus();
+    });
     list.appendChild(option);
   }
 }
 
 const pickedModel = () => document.querySelector('input[name="asr-model"]:checked')?.value;
+// Until the user picks a model, the app may use one it finds on this computer (readiness
+// shows which) instead of asking for its default to be downloaded.
+let modelPicked = false;
 
 async function deleteModel(model) {
   const inUse = model.id === pickedModel() && provider() === "local";
@@ -681,6 +687,7 @@ $("open-settings").addEventListener("click", async () => {
   for (const radio of document.querySelectorAll('input[name="llm-provider"]')) {
     radio.checked = radio.value === settings.llm_provider;
   }
+  modelPicked = settings.asr_model_picked;
   savedChatgptModel = settings.chatgpt_model;
   chatgpt = await call("chatgpt_status");
   chatgptModels = null;
@@ -737,6 +744,7 @@ function readSettings() {
     stop_when_call_ends: $("stop-after-call").checked,
     auto_minutes: $("auto-minutes").checked,
     asr_model: pickedModel(),
+    asr_model_picked: modelPicked,
     asr_provider: provider(),
     asr_service_url: $("asr-url").value.trim(),
     asr_service_model: $("asr-model-name").value.trim(),
