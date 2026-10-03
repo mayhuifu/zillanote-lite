@@ -2,6 +2,7 @@
 
 pub mod audio;
 pub mod calls;
+pub mod chatgpt;
 pub mod chunker;
 pub mod download;
 pub mod email;

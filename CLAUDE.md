@@ -58,8 +58,11 @@ at a time:
 → diarization, best effort (no models means no names), and `turns::split_at_turns` so every
 chunk has one speaker → a bundled `llama-server` is started, transcribes the chunks and is
 stopped again, or, with `asr_provider: service`, each chunk goes to the user's
-OpenAI-compatible transcription service through the same `Qwen3AsrClient` → `minutes::write_minutes` (skipped when `auto_minutes` is off; passing
-failures retried) → email if configured. A failure is recorded on the meeting (status
+OpenAI-compatible transcription service through the same `Qwen3AsrClient` →
+`minutes::write_minutes` through `/chat/completions`, or, with `llm_provider: chatgpt`,
+through `/responses` on the user's ChatGPT plan (`chatgpt.rs`, Sign in with ChatGPT: streamed,
+`store: false`, no `temperature`, the system prompt as `instructions`); skipped when
+`auto_minutes` is off, passing failures retried → email if configured. A failure is recorded on the meeting (status
 `failed` plus the reason), not returned. Meetings that failed with `MODEL_MISSING` are
 processed by themselves once the model download ends.
 
@@ -88,7 +91,11 @@ thread reads `Store::settings_without_secrets()`, because `settings()` goes to t
   (see `Qwen3AsrModel`). Never list a name in both `serialize` and `to_string`.
 - **Secrets:** the fields kept outside `settings.json` are listed once, in
   `Settings::secrets_mut()` (LLM key, mail password, speech-service key); a new secret goes
-  there. Only a macOS release build uses the keychain (`cfg(all(target_os = "macos",
+  there. The ChatGPT sign-in is apart from Settings on purpose: its refresh token changes on
+  every renewal and must never come back from the window with an older value. It lives in
+  `chatgpt.json` plus one keychain item (`Store::chatgpt`/`save_chatgpt`), and renewals go
+  through one lock in `chatgpt::access_token`, because a refresh token used twice ends the
+  session. Only a macOS release build uses the keychain (`cfg(all(target_os = "macos",
   not(debug_assertions)))` in `secrets.rs`). Debug builds keep the API key and mail password
   in `settings.json`, so a dev build on the folder of an installed app has no API key.
 - **TLS:** reqwest uses `native-tls` on purpose: some local proxies drop rustls'

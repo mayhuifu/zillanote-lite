@@ -154,6 +154,13 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
+### The ChatGPT logo
+
+`ui/chatgpt-logo.svg` is OpenAI's logo, from OpenAI's Sign in with ChatGPT developer assets
+(developers.openai.com/assets/siwc/sign-in-buttons/chatgpt-logo-white.svg). It is a
+trademark of OpenAI and is used only on the "Continue with ChatGPT" button, as OpenAI's
+guidelines for that button ask. It is not covered by ZillaNote's license.
+
 ## Downloaded by the app, on the user's request
 
 None of these is in the repository or the installer. The app offers to download them, from

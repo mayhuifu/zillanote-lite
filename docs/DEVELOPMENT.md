@@ -59,6 +59,7 @@ cargo test -p engine live_download -- --ignored --nocapture     # fetches the sp
 cargo test -p engine live_system_audio -- --ignored --nocapture   # plays a sound, expects to hear it in the tap
 cargo test -p engine live_microphone_users -- --ignored --nocapture   # prints who holds the microphone, ten seconds long
 cargo test -p engine live_recording -- --ignored --nocapture      # plays 8 s of noise, records both channels
+cargo test -p engine live_chatgpt -- --ignored --nocapture        # signs in with ChatGPT in the browser, asks one model one line
 ```
 
 ## Layout

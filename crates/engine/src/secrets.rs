@@ -1,4 +1,4 @@
-//! Where the API key and the mail password are kept: the system keychain in the installed
+//! Where the API keys, the mail password and the ChatGPT sign-in are kept: the system keychain in the installed
 //! app, so they are encrypted at rest and not in a file a backup or a sync folder carries off.
 //!
 //! The keychain ties an item to the signature of the program that wrote it. A development
@@ -12,6 +12,8 @@ use std::sync::Mutex;
 pub const LLM_API_KEY: &str = "llm_api_key";
 pub const EMAIL_PASSWORD: &str = "email_password";
 pub const ASR_SERVICE_KEY: &str = "asr_service_key";
+/// The ChatGPT sign-in's tokens, as one JSON value (see `chatgpt.rs`).
+pub const CHATGPT_TOKENS: &str = "chatgpt_tokens";
 
 pub trait SecretStore: Debug + Send + Sync {
     /// `Ok(None)` when there is no such secret; an error when it could not be looked at (the

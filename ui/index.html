@@ -79,6 +79,7 @@
       <footer class="actions">
         <select id="template" aria-label="Template"></select>
         <button id="rewrite">Write minutes</button>
+        <small id="plan-note" class="plan-note" hidden>Using ChatGPT plan · <button type="button" class="text link chatgpt-usage">Manage usage</button></small>
         <span class="spacer"></span>
         <button id="reprocess" class="text" title="Transcribe the recording again">Transcribe again</button>
         <button id="delete" class="text danger">Delete</button>
@@ -132,10 +133,28 @@
 
         <section class="page" data-page="llm" hidden>
           <h2><button type="button" class="back" aria-label="Back to Settings">‹</button>Language model</h2>
-          <p class="help">Writes the minutes. Any OpenAI-compatible endpoint: LM Studio or Ollama on this computer, or a hosted API with a key.</p>
-          <label>Endpoint URL <input id="llm-url" type="url" placeholder="http://localhost:1234/v1" /></label>
-          <label>Model <input id="llm-model" type="text" placeholder="qwen/qwen3.8-27b" /></label>
-          <label>API key <input id="llm-key" type="password" placeholder="Not needed for a local model" autocomplete="off" /></label>
+          <p class="help">Writes the minutes from the transcript.</p>
+          <label class="check"><input type="radio" name="llm-provider" value="chatgpt" /> <span><b>Use your ChatGPT plan</b><small>Complete eligible AI requests in this app with usage included in your ChatGPT plan or credits balance. The transcript is sent to OpenAI.</small></span></label>
+          <label class="check"><input type="radio" name="llm-provider" value="compatible" /> <span><b>A model you choose</b><small>Any OpenAI-compatible endpoint: LM Studio or Ollama on this computer, free and private, or a hosted API with your own key.</small></span></label>
+
+          <div id="llm-chatgpt" class="group" hidden>
+            <div id="chatgpt-out" class="group">
+              <button type="button" id="chatgpt-sign-in" class="chatgpt"><img src="chatgpt-logo.svg" alt="" width="18" height="18" />Continue with ChatGPT</button>
+              <p class="help" id="chatgpt-waiting" hidden>Finish signing in in your browser. <button type="button" id="chatgpt-cancel" class="text link">Cancel</button></p>
+            </div>
+            <div id="chatgpt-in" class="group" hidden>
+              <p class="help">Signed in as <b id="chatgpt-email"></b> <button type="button" id="chatgpt-sign-out" class="text link">Sign out</button></p>
+              <label>Model <select id="chatgpt-model"></select></label>
+              <p class="help">Using ChatGPT plan · <button type="button" class="text link chatgpt-usage">Manage usage</button></p>
+            </div>
+            <p class="help result" id="chatgpt-result" hidden></p>
+          </div>
+
+          <div id="llm-compatible" class="group">
+            <label>Endpoint URL <input id="llm-url" type="url" placeholder="http://localhost:1234/v1" /></label>
+            <label>Model <input id="llm-model" type="text" placeholder="qwen/qwen3.8-27b" /></label>
+            <label>API key <input id="llm-key" type="password" placeholder="Not needed for a local model" autocomplete="off" /></label>
+          </div>
         </section>
 
         <section class="page" data-page="prompt" hidden>
@@ -179,6 +198,18 @@
         <menu>
           <button type="button" id="cancel-settings" class="text">Cancel</button>
           <button type="submit" id="save-settings" class="primary">Save</button>
+        </menu>
+      </form>
+    </dialog>
+
+    <!-- Shown once, after the first sign-in: OpenAI's words for it. -->
+    <dialog id="chatgpt-welcome" class="note">
+      <form method="dialog">
+        <h2>You're using your ChatGPT plan</h2>
+        <p>Eligible usage in this app uses your ChatGPT plan. Manage usage in your ChatGPT settings.</p>
+        <menu>
+          <button type="button" class="text chatgpt-usage">Manage usage</button>
+          <button type="submit" class="primary" autofocus>Got it</button>
         </menu>
       </form>
     </dialog>

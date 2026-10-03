@@ -13,9 +13,10 @@ use speakers::{DiarizationConfig, DiarizeRequest, Diarizer, SpeakerModels};
 use crate::audio::{TARGET_RATE, read_wav_16k_channels};
 use crate::chunker::{Chunk, ChunkerConfig, speech_chunks};
 use crate::email;
-use crate::minutes::{About, LlmConfig, write_minutes};
+use crate::chatgpt;
+use crate::minutes::{About, LlmApi, LlmConfig, write_minutes};
 use crate::mixdown::recognition_signal;
-use crate::store::{AsrProvider, Meeting, Settings, Status, Store};
+use crate::store::{AsrProvider, LlmProvider, Meeting, Settings, Status, Store};
 use crate::templates::template;
 use crate::transcript::{Segment, Transcript};
 use crate::turns::{Piece, Turn, seconds_by_speaker, split_at_turns};
@@ -58,6 +59,8 @@ pub struct Pipeline {
     pub store: Store,
     /// Folders a `llama-server` shipped with the app may be in.
     pub bundled_server_dirs: Vec<PathBuf>,
+    /// Where Sign in with ChatGPT and the plan's requests go.
+    pub chatgpt: chatgpt::Endpoints,
 }
 
 impl Pipeline {
@@ -401,15 +404,20 @@ impl Pipeline {
             date: &date,
             known_terms: &settings.vocabulary,
         };
-        let result = write_minutes(
-            &llm_config(&settings),
-            &settings.system_prompt,
-            template(&meeting.template),
-            about,
-            &transcript.to_text(),
-            |_, _| {},
-        )
-        .await
+        let result = match self.llm_config(&settings).await {
+            Ok(config) => {
+                write_minutes(
+                    &config,
+                    &settings.system_prompt,
+                    template(&meeting.template),
+                    about,
+                    &transcript.to_text(),
+                    |_, _| {},
+                )
+                .await
+            }
+            Err(error) => Err(error),
+        }
         .and_then(|minutes| self.store.save_minutes(&meeting.id, &minutes));
 
         // The transcript is the hard part and it is safe: a meeting without minutes is
@@ -491,12 +499,26 @@ impl Pipeline {
     }
 }
 
-fn llm_config(settings: &Settings) -> LlmConfig {
-    LlmConfig {
-        base_url: settings.llm_base_url.clone(),
-        api_key: settings.llm_api_key.clone(),
-        model: settings.llm_model.clone(),
-        max_chars_per_call: settings.max_chars_per_call,
+impl Pipeline {
+    /// How to ask for the minutes. On the ChatGPT plan that takes a token that is good for a
+    /// while yet, renewed first if need be.
+    async fn llm_config(&self, settings: &Settings) -> Result<LlmConfig, String> {
+        Ok(match settings.llm_provider {
+            LlmProvider::Compatible => LlmConfig {
+                api: LlmApi::ChatCompletions,
+                base_url: settings.llm_base_url.clone(),
+                api_key: settings.llm_api_key.clone(),
+                model: settings.llm_model.clone(),
+                max_chars_per_call: settings.max_chars_per_call,
+            },
+            LlmProvider::Chatgpt => LlmConfig {
+                api: LlmApi::ChatGptPlan,
+                base_url: self.chatgpt.api.clone(),
+                api_key: chatgpt::access_token(&self.store, &self.chatgpt).await?,
+                model: settings.chatgpt_model.clone(),
+                max_chars_per_call: settings.max_chars_per_call,
+            },
+        })
     }
 }
 
@@ -539,6 +561,7 @@ pub struct Readiness {
     pub speaker_models_found: bool,
     /// What downloading the missing models would fetch.
     pub download_bytes: u64,
+    pub llm_provider: LlmProvider,
     pub llm_configured: bool,
     pub email_configured: bool,
 }
@@ -583,8 +606,15 @@ impl Pipeline {
                 &self.store.speaker_models_dir(),
                 local.then_some(model),
             )),
-            llm_configured: !settings.llm_base_url.trim().is_empty()
-                && !settings.llm_model.trim().is_empty(),
+            llm_provider: settings.llm_provider,
+            llm_configured: match settings.llm_provider {
+                LlmProvider::Compatible => {
+                    !settings.llm_base_url.trim().is_empty() && !settings.llm_model.trim().is_empty()
+                }
+                LlmProvider::Chatgpt => {
+                    self.store.chatgpt_without_tokens().ready() && !settings.chatgpt_model.trim().is_empty()
+                }
+            },
             email_configured: settings.email.is_configured(),
         }
     }
@@ -611,6 +641,7 @@ mod tests {
         let pipeline = Pipeline {
             store: store.clone(),
             bundled_server_dirs: Vec::new(),
+            chatgpt: chatgpt::Endpoints::openai(),
         };
         let at = |hour| chrono::Local::now() - chrono::Duration::hours(hour);
         let mut waiting = store.create_meeting(at(3), "discussion").unwrap();
@@ -635,6 +666,7 @@ mod tests {
         let pipeline = Pipeline {
             store: store.clone(),
             bundled_server_dirs: Vec::new(),
+            chatgpt: chatgpt::Endpoints::openai(),
         };
         let source = dir.path().join("Budget review.wav");
         let spec = hound::WavSpec {
@@ -667,6 +699,7 @@ mod tests {
         let pipeline = Pipeline {
             store: store.clone(),
             bundled_server_dirs: Vec::new(),
+            chatgpt: chatgpt::Endpoints::openai(),
         };
         let folder = Qwen3AsrModel::Large.install_dir(&store.models_dir());
         std::fs::create_dir_all(&folder).unwrap();
@@ -727,6 +760,7 @@ mod tests {
             store: store.clone(),
             // No speech engine and no speech model anywhere: the service needs neither.
             bundled_server_dirs: Vec::new(),
+            chatgpt: chatgpt::Endpoints::openai(),
         };
         assert!(pipeline.readiness().speech_ready);
 
@@ -752,6 +786,7 @@ mod tests {
         let pipeline = Pipeline {
             store: store.clone(),
             bundled_server_dirs: Vec::new(),
+            chatgpt: chatgpt::Endpoints::openai(),
         };
         assert!(!pipeline.readiness().speech_ready);
 
@@ -761,6 +796,82 @@ mod tests {
         assert_eq!(meeting.status, Status::Failed);
         assert!(meeting.error.unwrap().starts_with("No speech service is set up"));
         assert!(pipeline.waiting_for_model().is_empty());
+    }
+
+    fn meeting_with_a_transcript(store: &Store) -> Meeting {
+        let meeting = store.create_meeting(chrono::Local::now(), "discussion").unwrap();
+        let transcript: crate::transcript::Transcript = serde_json::from_value(serde_json::json!({
+            "duration_seconds": 3.0, "engine": "test",
+            "segments": [{ "start": 0.0, "end": 3.0, "text": "We ship on Friday." }],
+        }))
+        .unwrap();
+        store.save_transcript(&meeting.id, &transcript).unwrap();
+        meeting
+    }
+
+    #[tokio::test(flavor = "multi_thread")]
+    async fn minutes_on_the_chatgpt_plan_are_asked_for_with_the_sign_ins_token() {
+        use wiremock::matchers::{header, method, path};
+        let server = wiremock::MockServer::start().await;
+        let events = [
+            serde_json::json!({ "type": "response.output_text.delta", "delta": "## Decisions\nShip on Friday." }),
+            serde_json::json!({ "type": "response.completed", "response": {} }),
+        ];
+        let body: String = events.iter().map(|event| format!("data: {event}\n\n")).collect();
+        wiremock::Mock::given(method("POST"))
+            .and(path("/v1/responses"))
+            .and(header("authorization", "Bearer access-1"))
+            .respond_with(wiremock::ResponseTemplate::new(200).set_body_string(body))
+            .mount(&server)
+            .await;
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path().to_path_buf()).unwrap();
+        let mut settings = store.settings();
+        settings.llm_provider = LlmProvider::Chatgpt;
+        settings.chatgpt_model = "gpt-6.1-sol".to_string();
+        store.save_settings(&settings).unwrap();
+        let pipeline = Pipeline {
+            store: store.clone(),
+            bundled_server_dirs: Vec::new(),
+            chatgpt: chatgpt::Endpoints {
+                authorize: format!("{}/authorize", server.uri()),
+                token: format!("{}/token", server.uri()),
+                api: format!("{}/v1", server.uri()),
+            },
+        };
+        let meeting = meeting_with_a_transcript(&store);
+
+        // Not signed in yet: no minutes, and the reason says where to go.
+        assert!(!pipeline.readiness().llm_configured);
+        pipeline.rewrite_minutes(&meeting.id, "discussion", &|_| {}).await;
+        let error = store.meeting(&meeting.id).unwrap().error.unwrap();
+        assert!(error.contains("Sign in with ChatGPT"), "{error}");
+
+        store
+            .save_chatgpt(&chatgpt::ChatGpt {
+                account: Some(chatgpt::Account {
+                    email: "ada@example.com".to_string(),
+                    client_id: "oaiapp_1".to_string(),
+                    plan_usage: true,
+                    ..chatgpt::Account::default()
+                }),
+                tokens: Some(chatgpt::Tokens {
+                    access_token: "access-1".to_string(),
+                    refresh_token: "refresh-1".to_string(),
+                    expires_at: chrono::Utc::now().timestamp() + 3600,
+                }),
+                ..chatgpt::ChatGpt::default()
+            })
+            .unwrap();
+        assert!(pipeline.readiness().llm_configured);
+        pipeline.rewrite_minutes(&meeting.id, "discussion", &|_| {}).await;
+
+        let meeting = store.meeting(&meeting.id).unwrap();
+        assert_eq!(meeting.error, None);
+        assert_eq!(store.minutes(&meeting.id).unwrap(), "## Decisions\nShip on Friday.");
+        let sent: serde_json::Value = server.received_requests().await.unwrap()[0].body_json().unwrap();
+        assert_eq!(sent["model"], "gpt-6.1-sol");
+        assert!(sent["input"][0]["content"].as_str().unwrap().contains("We ship on Friday."));
     }
 
     /// Needs `llama-server`, the Qwen3-ASR files and a WAV recording on this machine. With
@@ -803,6 +914,7 @@ mod tests {
             bundled_server_dirs: vec![
                 std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../app/resources/llama-server"),
             ],
+            chatgpt: chatgpt::Endpoints::openai(),
         };
         let statuses = Mutex::new(Vec::new());
         let started = std::time::Instant::now();

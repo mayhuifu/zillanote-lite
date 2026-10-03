@@ -36,9 +36,9 @@ and mails them to you. The recording never leaves your computer.
   never uploaded, and nothing is ever sent to the people who make ZillaNote.
 - **Free. No account, no subscription.** Open source under MIT or Apache-2.0: use it at
   home or at work, change it, share it.
-- **Your model, your costs.** The minutes come from the language model you choose: one on
-  your own computer (LM Studio, Ollama), free and private, or any OpenAI-compatible service
-  with your own key, paying only for what you use.
+- **Your model, your costs.** The minutes come from the language model you choose: your
+  ChatGPT plan, with one sign-in and no API key; one on your own computer (LM Studio,
+  Ollama), free and private; or any OpenAI-compatible service with your own key.
 - **Nothing to do after the meeting.** One button. The transcript, the speaker names and the
   minutes arrive by themselves.
 
@@ -77,13 +77,14 @@ extra click: on a Mac, **System Settings → Privacy & Security → Open Anyway*
 **More info → Run anyway**. The release notes have the steps in full.
 
 On the first start ZillaNote offers to download its speech model (0.9 GB, once). Then, in
-Settings, point it at a language model for the minutes and, if you like, a mail account to
-send them from.
+Settings → Language model, press **Continue with ChatGPT** or point it at a model of your
+own for the minutes and, if you like, add a mail account to send them from.
 
 ## Privacy
 
 Audio is recorded to your computer and transcribed there. Only the transcript leaves it, and
-only for the language model you set, which can itself run on your computer; the minutes go
+only for the language model you set (your ChatGPT account, a service of your choice, or one
+that runs on your computer); the minutes go
 only to the mail server you set. There is no account and no analytics, and nothing is sent to
 the authors of ZillaNote. [The details](docs/HOW-IT-WORKS.md#privacy).
 

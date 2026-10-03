@@ -22,6 +22,8 @@ let recording = null; // { meetingId, startedAt }
 let templates = [];
 let speakerLabels = [];
 let missing = null; // { bytes, what } while models are still to be downloaded
+// How the engine starts the reason a meeting got no minutes when the plan is used up.
+const USAGE_LIMIT = "Your ChatGPT plan has reached its usage limit.";
 
 // --- helpers ---
 
@@ -176,7 +178,13 @@ async function showDetail(id, { keepTab = false } = {}) {
       : "";
 
   $("detail-error").hidden = !meeting.error;
-  $("detail-error").textContent = meeting.error || "";
+  if (meeting.error?.includes(USAGE_LIMIT)) {
+    $("detail-error").innerHTML =
+      '<strong>Usage limit reached</strong>\nReview your plan or this app\'s limit in ChatGPT settings.' +
+      '<button type="button" class="text link chatgpt-usage">Manage usage</button>';
+  } else {
+    $("detail-error").textContent = meeting.error || "";
+  }
 
   const busy = BUSY.has(meeting.status);
   const bar = $("detail-progress");
@@ -326,8 +334,13 @@ async function showReadiness() {
     problems.push("No speech service is set up yet, so recordings cannot be transcribed. Open Settings → Speech recognition.");
   }
   if (!ready.llm_configured) {
-    problems.push("No language model is chosen yet, so recordings will be transcribed but get no minutes. Open Settings.");
+    problems.push(
+      ready.llm_provider === "chatgpt"
+        ? "Sign in with ChatGPT and choose a model in Settings → Language model, or recordings will be transcribed but get no minutes."
+        : "No language model is chosen yet, so recordings will be transcribed but get no minutes. Open Settings.",
+    );
   }
+  $("plan-note").hidden = ready.llm_provider !== "chatgpt";
   $("notice").hidden = problems.length === 0;
   $("notice").textContent = problems.join("\n\n");
   missing = ready.download_bytes
@@ -483,6 +496,7 @@ let defaultPrompt = "";
 function showPage(name) {
   for (const page of document.querySelectorAll("#settings .page")) page.hidden = page.dataset.page !== name;
   if (name === "main") renderSetupStatus();
+  if (name === "llm") loadChatgptModels();
   $("settings").scrollTop = 0;
 }
 for (const row of document.querySelectorAll("#settings [data-open]")) {
@@ -503,6 +517,112 @@ for (const radio of document.querySelectorAll('input[name="asr-provider"]')) {
     renderSetupStatus();
   });
 }
+
+// --- the language model: a model of the user's choice, or their ChatGPT plan ---
+
+const llmProvider = () => document.querySelector('input[name="llm-provider"]:checked')?.value || "compatible";
+let chatgpt = null; // what chatgpt_status said
+let chatgptModels = null; // the account's models once listed; [] while they are asked for
+let savedChatgptModel = "";
+
+function showLlmProvider() {
+  $("llm-chatgpt").hidden = llmProvider() !== "chatgpt";
+  $("llm-compatible").hidden = llmProvider() !== "compatible";
+  renderChatgpt();
+}
+for (const radio of document.querySelectorAll('input[name="llm-provider"]')) {
+  radio.addEventListener("change", () => {
+    showLlmProvider();
+    loadChatgptModels();
+    renderSetupStatus();
+  });
+}
+
+function chatgptResult(text, ok = false) {
+  $("chatgpt-result").hidden = !text;
+  $("chatgpt-result").textContent = text || "";
+  $("chatgpt-result").className = `help result ${ok ? "ok" : "problem"}`;
+}
+
+function renderChatgpt() {
+  const signedIn = Boolean(chatgpt?.signed_in);
+  $("chatgpt-out").hidden = signedIn;
+  $("chatgpt-in").hidden = !signedIn;
+  $("chatgpt-email").textContent = chatgpt?.email || "your ChatGPT account";
+  if (signedIn && !chatgpt.plan_usage) {
+    chatgptResult("ChatGPT plan access wasn't granted. Sign out and sign in again to allow it, or choose a model of your own.");
+  }
+}
+
+// Asked for when the page is in view and the plan can be used, once per opening of Settings.
+async function loadChatgptModels() {
+  if (llmProvider() !== "chatgpt" || $("llm-chatgpt").closest(".page").hidden) return;
+  if (!chatgpt?.signed_in || !chatgpt.plan_usage || chatgptModels) return;
+  chatgptModels = [];
+  const select = $("chatgpt-model");
+  select.disabled = true;
+  select.innerHTML = "<option>Loading…</option>";
+  try {
+    chatgptModels = await invoke("chatgpt_models");
+    const chosen = savedChatgptModel || chatgptModels[0]?.slug || "";
+    const listed = chatgptModels.some((model) => model.slug === chosen);
+    // A model no longer offered stays chosen until the user picks another: it is theirs.
+    const options = listed || !chosen ? chatgptModels : [{ slug: chosen, display_name: chosen }, ...chatgptModels];
+    select.innerHTML = options
+      .map((model) => `<option value="${escapeHtml(model.slug)}">${escapeHtml(model.display_name)}</option>`)
+      .join("");
+    select.value = chosen;
+    select.disabled = false;
+    if (!options.length) chatgptResult("This ChatGPT account has no models to offer.");
+  } catch (error) {
+    chatgptModels = null;
+    select.innerHTML = "";
+    chatgptResult(String(error));
+    // A session that ended shows the sign-in button again.
+    chatgpt = (await invoke("chatgpt_status").catch(() => null)) || chatgpt;
+    renderChatgpt();
+  }
+  renderSetupStatus();
+}
+
+$("chatgpt-sign-in").addEventListener("click", async () => {
+  const button = $("chatgpt-sign-in");
+  button.disabled = true;
+  $("chatgpt-waiting").hidden = false;
+  chatgptResult("");
+  try {
+    chatgpt = await invoke("chatgpt_sign_in");
+    chatgptModels = null;
+    renderChatgpt();
+    await loadChatgptModels();
+    if (chatgpt.plan_usage && !chatgpt.welcomed) $("chatgpt-welcome").showModal();
+  } catch (error) {
+    if (!String(error).includes("called off")) chatgptResult(String(error));
+  } finally {
+    button.disabled = false;
+    $("chatgpt-waiting").hidden = true;
+    renderSetupStatus();
+  }
+});
+$("chatgpt-cancel").addEventListener("click", () => invoke("chatgpt_cancel_sign_in"));
+$("chatgpt-sign-out").addEventListener("click", async () => {
+  await call("chatgpt_sign_out");
+  chatgpt = await call("chatgpt_status");
+  chatgptModels = null;
+  $("chatgpt-model").innerHTML = "";
+  chatgptResult("");
+  renderChatgpt();
+  renderSetupStatus();
+});
+$("chatgpt-model").addEventListener("change", renderSetupStatus);
+$("chatgpt-welcome").addEventListener("close", () => {
+  chatgpt = { ...chatgpt, welcomed: true };
+  call("chatgpt_welcomed");
+});
+// "Manage usage" is offered in Settings, under a meeting, and in the welcome note.
+document.addEventListener("click", (event) => {
+  if (event.target.closest(".chatgpt-usage")) call("open_chatgpt_usage");
+});
 
 const host = (url) => {
   try {
@@ -529,8 +649,15 @@ function renderSetupStatus() {
       status("status-speech", here ? model.name : `${model.name}, not downloaded yet`, !here);
     }
   }
-  const [llmUrl, llmModel] = [$("llm-url").value.trim(), $("llm-model").value.trim()];
-  status("status-llm", llmUrl && llmModel ? `${llmModel}, ${host(llmUrl)}` : "Not set up yet: no minutes without it", !(llmUrl && llmModel));
+  if (llmProvider() === "chatgpt") {
+    const model = $("chatgpt-model").selectedOptions[0]?.textContent || savedChatgptModel;
+    if (!chatgpt?.signed_in) status("status-llm", "ChatGPT, not signed in yet", true);
+    else if (!chatgpt.plan_usage) status("status-llm", "ChatGPT plan access not granted", true);
+    else status("status-llm", model ? `${model}, ChatGPT plan` : "ChatGPT plan, no model chosen yet", !model);
+  } else {
+    const [llmUrl, llmModel] = [$("llm-url").value.trim(), $("llm-model").value.trim()];
+    status("status-llm", llmUrl && llmModel ? `${llmModel}, ${host(llmUrl)}` : "Not set up yet: no minutes without it", !(llmUrl && llmModel));
+  }
   const terms = $("vocabulary").value.split("\n").filter((term) => term.trim()).length;
   const prompt = $("system-prompt").value.trim() === defaultPrompt.trim() ? "Default prompt" : "Your own prompt";
   status("status-prompt", terms ? `${prompt}, ${terms} ${terms === 1 ? "term" : "terms"}` : prompt);
@@ -551,6 +678,15 @@ $("open-settings").addEventListener("click", async () => {
   $("asr-key").value = settings.asr_service_key;
   $("test-asr-result").hidden = true;
   $("test-email-result").hidden = true;
+  for (const radio of document.querySelectorAll('input[name="llm-provider"]')) {
+    radio.checked = radio.value === settings.llm_provider;
+  }
+  savedChatgptModel = settings.chatgpt_model;
+  chatgpt = await call("chatgpt_status");
+  chatgptModels = null;
+  $("chatgpt-model").innerHTML = "";
+  chatgptResult("");
+  showLlmProvider();
   $("llm-url").value = settings.llm_base_url;
   $("llm-model").value = settings.llm_model;
   $("llm-key").value = settings.llm_api_key;
@@ -586,6 +722,9 @@ $("email-from").addEventListener("input", showServerField);
 
 function readSettings() {
   return {
+    llm_provider: llmProvider(),
+    // Until the list has come, the model chosen before stays.
+    chatgpt_model: $("chatgpt-model").disabled ? savedChatgptModel : $("chatgpt-model").value || savedChatgptModel,
     llm_base_url: $("llm-url").value.trim(),
     llm_model: $("llm-model").value.trim(),
     llm_api_key: $("llm-key").value.trim(),

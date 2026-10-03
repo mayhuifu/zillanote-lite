@@ -6,6 +6,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use engine::calls::{CallState, CallWatch};
+use engine::chatgpt;
 use engine::download::{self, Retry};
 use engine::pipeline::{Pipeline, Readiness};
 use engine::recorder::Recording;
@@ -51,6 +52,8 @@ struct App {
     calls: Mutex<CallWatch>,
     /// What the windows were last told about calls, for a window that opens later.
     call_state: Mutex<CallState>,
+    /// The Sign in with ChatGPT that is waiting for the browser, so it can be called off.
+    sign_in: Mutex<Option<tokio::task::AbortHandle>>,
 }
 
 #[derive(Default)]
@@ -470,6 +473,90 @@ async fn test_speech_service(settings: Settings) -> Result<String, String> {
         Err(error) => tracing::warn!(%error, "speech_service_test_failed"),
     }
     answer
+}
+
+// --- Sign in with ChatGPT ---
+
+#[tauri::command]
+fn chatgpt_status(state: State<'_, App>) -> chatgpt::Status {
+    state.store().chatgpt_without_tokens().status()
+}
+
+/// Opens the sign-in page in the browser and waits for it to come back. A second press
+/// replaces a sign-in still waiting.
+#[tauri::command]
+async fn chatgpt_sign_in(app: AppHandle, state: State<'_, App>) -> Result<chatgpt::Status, String> {
+    let store = state.store().clone();
+    let endpoints = state.pipeline.chatgpt.clone();
+    let task = tokio::spawn(async move { chatgpt::sign_in(&store, &endpoints, open_in_browser).await });
+    if let Ok(mut waiting) = state.sign_in.lock()
+        && let Some(previous) = waiting.replace(task.abort_handle())
+    {
+        previous.abort();
+    }
+    let result = match task.await {
+        Ok(result) => result,
+        Err(error) if error.is_cancelled() => Err("The sign-in was called off.".to_string()),
+        Err(error) => Err(error.to_string()),
+    };
+    if let Err(error) = &result {
+        tracing::warn!(%error, "chatgpt_sign_in_failed");
+    }
+    // Back from the browser, to where the user was.
+    if let Some(window) = app.get_webview_window(MAIN) {
+        let _ = window.set_focus();
+    }
+    result
+}
+
+#[tauri::command]
+fn chatgpt_cancel_sign_in(state: State<'_, App>) {
+    if let Some(waiting) = state.sign_in.lock().ok().and_then(|mut waiting| waiting.take()) {
+        waiting.abort();
+    }
+}
+
+#[tauri::command]
+fn chatgpt_sign_out(state: State<'_, App>) -> Result<(), String> {
+    tracing::info!("chatgpt_signed_out");
+    chatgpt::sign_out(state.store())
+}
+
+#[tauri::command]
+fn chatgpt_welcomed(state: State<'_, App>) -> Result<(), String> {
+    chatgpt::mark_welcomed(state.store())
+}
+
+/// The models the signed-in account may use.
+#[tauri::command]
+async fn chatgpt_models(state: State<'_, App>) -> Result<Vec<chatgpt::Model>, String> {
+    let endpoints = &state.pipeline.chatgpt;
+    let token = chatgpt::access_token(state.store(), endpoints).await?;
+    chatgpt::models(endpoints, &token).await
+}
+
+/// ChatGPT's page where the user sees and limits what ZillaNote uses of their plan.
+#[tauri::command]
+fn open_chatgpt_usage() -> Result<(), String> {
+    open_in_browser(chatgpt::USAGE_URL)
+}
+
+fn open_in_browser(url: &str) -> Result<(), String> {
+    let mut command = if cfg!(target_os = "macos") {
+        std::process::Command::new("open")
+    } else if cfg!(windows) {
+        // Not `cmd /c start`, which would take the URL's `&`s for its own.
+        let mut command = std::process::Command::new("rundll32");
+        command.arg("url.dll,FileProtocolHandler");
+        command
+    } else {
+        std::process::Command::new("xdg-open")
+    };
+    command
+        .arg(url)
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| format!("The browser could not be opened: {error}"))
 }
 
 /// Deletes a speech model's files of ZillaNote's own to give the space back, and says how
@@ -909,6 +996,7 @@ fn main() {
                 pipeline: Pipeline {
                     store,
                     bundled_server_dirs: bundled_server_dirs(app.handle()),
+                    chatgpt: chatgpt::Endpoints::openai(),
                 },
                 active: Mutex::new(None),
                 jobs: Arc::new(tokio::sync::Mutex::new(())),
@@ -916,6 +1004,7 @@ fn main() {
                 record_item,
                 calls: Mutex::new(CallWatch::new()),
                 call_state: Mutex::default(),
+                sign_in: Mutex::default(),
             });
             place_mini(app.handle());
             std::thread::spawn({
@@ -968,6 +1057,13 @@ fn main() {
             send_test_email,
             test_speech_service,
             delete_model,
+            chatgpt_status,
+            chatgpt_sign_in,
+            chatgpt_cancel_sign_in,
+            chatgpt_sign_out,
+            chatgpt_welcomed,
+            chatgpt_models,
+            open_chatgpt_usage,
             open_system_audio_settings,
             name_speaker,
             list_voices,

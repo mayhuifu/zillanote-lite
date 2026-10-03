@@ -1,7 +1,7 @@
 # How ZillaNote lite works
 
 Record a meeting, get minutes. One big button; transcription and minutes happen in the
-background, on this machine except for the language model you choose. This page says what
+background, on this machine except for the language model you choose (or your ChatGPT plan). This page says what
 each part does in detail; [`DEVELOPMENT.md`](DEVELOPMENT.md) says how to build and test it.
 
 ## The parts
@@ -23,7 +23,8 @@ each part does in detail; [`DEVELOPMENT.md`](DEVELOPMENT.md) says how to build a
   service with the names and terms from Settings, and no speech model has to be downloaded.
   A busy service is tried twice more before a stretch is given up. The key is kept like the
   language model's.
-- **Minutes:** any OpenAI-compatible endpoint (LM Studio, Ollama, or a hosted API with a key).
+- **Minutes:** your ChatGPT plan, or any OpenAI-compatible endpoint (LM Studio, Ollama, or a
+  hosted API with a key). Settings → Language model chooses between the two.
   The system prompt, editable in Settings (its default is in
   [`default-system-prompt.md`](default-system-prompt.md)), holds the rules and,
   spelled out, the shape of the minutes: numbered topics with their aspects, decisions, next steps with the owner in
@@ -81,6 +82,17 @@ each part does in detail; [`DEVELOPMENT.md`](DEVELOPMENT.md) says how to build a
   a meeting is being worked on, it asks first and says what happens to it. Whichever way the
   app goes (Quit from the Dock and a shutdown included, where nothing can be asked), a
   recording under way is closed into a whole file and the speech engine is stopped.
+- **Your ChatGPT plan:** "Continue with ChatGPT" signs in through the browser (OpenAI's Sign
+  in with ChatGPT for open-source apps: OAuth with PKCE, back to a one-time listener on
+  127.0.0.1). The first sign-in registers this installation with OpenAI; there is no API key
+  and no cost beyond your plan. Settings then lists the models your account may use. The
+  minutes are asked for through the Responses API with nothing stored at OpenAI
+  (`store: false`), and count against your plan, up to the weekly limit you can set for
+  ZillaNote under "Manage usage" (chatgpt.com/settings/usage). When the limit is reached the
+  meeting keeps its transcript and says so, with that link; "Write minutes" tries again
+  later. The sign-in renews itself; if it is revoked or expires for good, Settings asks you
+  to sign in again. Sign out forgets the account and its tokens. The plan pays for the
+  minutes only: OpenAI does not let a ChatGPT plan pay for transcription.
 - **Import:** "Import a recording", or a file dropped on the window, makes a meeting from a
   recording made elsewhere (WAV anywhere; m4a, mp3, mp4 and the rest through macOS's own
   converter). The original is only read.
@@ -88,8 +100,9 @@ each part does in detail; [`DEVELOPMENT.md`](DEVELOPMENT.md) says how to build a
   recognition, Language model, Prompt and vocabulary, Email and Remembered voices each open
   a page of their own, with a line saying what is set there or what is missing. One Save
   keeps the changes of every page.
-- **Secrets:** the installed app keeps the API keys and the mail password in the macOS
-  keychain, and moves any that an older version left in `settings.json`. If the keychain
+- **Secrets:** the installed app keeps the API keys, the mail password and the ChatGPT
+  sign-in's tokens in the macOS keychain (the account's email and the installation's id are in
+  `chatgpt.json`), and moves any that an older version left in `settings.json`. If the keychain
   refuses, the secret stays in the file rather than being lost; if it cannot be read (you
   said no to its question), what it holds is left alone, whatever Settings is saved as. Development builds
   (`cargo run`) keep them in `settings.json`, readable only by you: the keychain ties an item
@@ -118,8 +131,9 @@ Audio is recorded to a file on this computer and read by programs on this comput
 bundled speech engine and the speaker models. The one exception is your own choice: with a
 speech service set in Settings → Speech recognition, each stretch of speech is sent to that
 service to be transcribed. The transcript goes to one place, the
-language-model endpoint set in Settings, which can be a program on this computer (LM Studio,
-Ollama) or a hosted API of your choosing; the minutes go to the mail server set in Settings,
+language model set in Settings: a program on this computer (LM Studio, Ollama), a hosted API
+of your choosing, or OpenAI under your own ChatGPT account when you sign in with ChatGPT
+(sent with `store: false`, and handled as your account's data controls say); the minutes go to the mail server set in Settings,
 if any. Model files are downloaded from Hugging Face and GitHub, or their mirrors, and
 checked against pinned checksums. Nothing else leaves the computer, and nothing is sent to
 the authors of ZillaNote.

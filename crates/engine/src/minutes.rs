@@ -1,5 +1,6 @@
 //! Turns a transcript into minutes with whatever OpenAI-compatible endpoint the user has:
-//! LM Studio or Ollama on this machine, or a hosted API with a key.
+//! LM Studio or Ollama on this machine, or a hosted API with a key. Or on the user's ChatGPT
+//! plan, after Sign in with ChatGPT, through the Responses API.
 
 use std::time::Duration;
 
@@ -8,8 +9,21 @@ use crate::templates::Template;
 /// Local models can take minutes on a long transcript.
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(900);
 
+/// How the model is asked.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum LlmApi {
+    /// `/chat/completions`, which every OpenAI-compatible server has.
+    #[default]
+    ChatCompletions,
+    /// `/responses` on the user's ChatGPT plan: the answer streamed, nothing stored, and the
+    /// system prompt as `instructions`, because a system message is turned away there. The
+    /// key is the sign-in's access token.
+    ChatGptPlan,
+}
+
 #[derive(Debug, Clone)]
 pub struct LlmConfig {
+    pub api: LlmApi,
     pub base_url: String,
     pub api_key: String,
     pub model: String,
@@ -159,7 +173,33 @@ impl Failure {
 }
 
 async fn chat_once(config: &LlmConfig, system_prompt: &str, user: &str) -> Result<String, Failure> {
-    let url = format!("{}/chat/completions", config.base_url.trim().trim_end_matches('/'));
+    let base = config.base_url.trim().trim_end_matches('/');
+    let model = config.model.trim();
+    let (url, body) = match config.api {
+        LlmApi::ChatCompletions => (
+            format!("{base}/chat/completions"),
+            serde_json::json!({
+                "model": model,
+                "temperature": 0.2,
+                "stream": false,
+                "messages": [
+                    Message { role: "system", content: system_prompt },
+                    Message { role: "user", content: user },
+                ],
+            }),
+        ),
+        // No temperature: the plan does not take one.
+        LlmApi::ChatGptPlan => (
+            format!("{base}/responses"),
+            serde_json::json!({
+                "model": model,
+                "instructions": system_prompt,
+                "input": [Message { role: "user", content: user }],
+                "store": false,
+                "stream": true,
+            }),
+        ),
+    };
     let mut client = reqwest::Client::builder().timeout(REQUEST_TIMEOUT);
     if is_loopback(&url) {
         // A system-wide proxy must not get between the app and a model on this machine.
@@ -167,15 +207,7 @@ async fn chat_once(config: &LlmConfig, system_prompt: &str, user: &str) -> Resul
     }
     let client = client.build().map_err(|e| Failure::lasting(e.to_string()))?;
 
-    let mut request = client.post(&url).json(&serde_json::json!({
-        "model": config.model.trim(),
-        "temperature": 0.2,
-        "stream": false,
-        "messages": [
-            Message { role: "system", content: system_prompt },
-            Message { role: "user", content: user },
-        ],
-    }));
+    let mut request = client.post(&url).json(&body);
     if !config.api_key.trim().is_empty() {
         request = request.bearer_auth(config.api_key.trim());
     }
@@ -192,32 +224,108 @@ async fn chat_once(config: &LlmConfig, system_prompt: &str, user: &str) -> Resul
     })?;
 
     let status = response.status();
-    // The connection dropping while the answer comes in passes too.
-    let body = response.text().await.map_err(|error| Failure {
+    if !status.is_success() || config.api == LlmApi::ChatCompletions {
+        // The connection dropping while the answer comes in passes too.
+        let body = response.text().await.map_err(broke_off)?;
+        if !status.is_success() {
+            if let Some((message, passing)) = crate::chatgpt::error_code(&body)
+                .filter(|_| config.api == LlmApi::ChatGptPlan)
+                .and_then(|code| crate::chatgpt::plan_failure(&code))
+            {
+                return Err(Failure { message, passing });
+            }
+            let detail = body.chars().take(300).collect::<String>();
+            return Err(Failure {
+                message: format!("The language model answered {status}: {detail}"),
+                // Too many requests, or the server's own trouble. Anything else 4xx is ours.
+                passing: status.as_u16() == 429 || status.is_server_error(),
+            });
+        }
+        let parsed: ChatResponse = serde_json::from_str(&body)
+            .map_err(|_| Failure::lasting("The language model's answer was not in the expected format.".to_string()))?;
+        return finished(parsed.choices.into_iter().next().map(|choice| choice.message.content).unwrap_or_default());
+    }
+    finished(streamed_answer(response).await?)
+}
+
+fn broke_off(error: reqwest::Error) -> Failure {
+    Failure {
         message: format!("The language model's answer broke off: {error}"),
         passing: true,
-    })?;
-    if !status.is_success() {
-        let detail = body.chars().take(300).collect::<String>();
-        return Err(Failure {
-            message: format!("The language model answered {status}: {detail}"),
-            // Too many requests, or the server's own trouble. Anything else 4xx is ours.
-            passing: status.as_u16() == 429 || status.is_server_error(),
-        });
     }
+}
 
-    let parsed: ChatResponse = serde_json::from_str(&body)
-        .map_err(|_| Failure::lasting("The language model's answer was not in the expected format.".to_string()))?;
-    let content = parsed
-        .choices
-        .into_iter()
-        .next()
-        .map(|choice| strip_reasoning(&choice.message.content))
-        .unwrap_or_default();
+fn finished(answer: String) -> Result<String, Failure> {
+    let content = strip_reasoning(&answer);
     if content.trim().is_empty() {
         return Err(Failure::lasting("The language model returned an empty answer.".to_string()));
     }
     Ok(content)
+}
+
+/// Reads a streamed Responses answer: text arrives in `response.output_text.delta` events, and
+/// only `response.completed` says it is whole.
+async fn streamed_answer(mut response: reqwest::Response) -> Result<String, Failure> {
+    let mut pending: Vec<u8> = Vec::new();
+    let mut text = String::new();
+    loop {
+        let Some(chunk) = response.chunk().await.map_err(broke_off)? else {
+            return Err(Failure {
+                message: "The language model's answer broke off before it was complete.".to_string(),
+                passing: true,
+            });
+        };
+        pending.extend_from_slice(&chunk);
+        // Whole lines only: a chunk can end inside a line, or inside a character.
+        while let Some(end) = pending.iter().position(|&byte| byte == b'\n') {
+            let line: Vec<u8> = pending.drain(..=end).collect();
+            let line = String::from_utf8_lossy(&line);
+            let Some(data) = line.trim().strip_prefix("data:") else {
+                continue;
+            };
+            let Ok(event) = serde_json::from_str::<serde_json::Value>(data.trim()) else {
+                continue;
+            };
+            match event["type"].as_str().unwrap_or_default() {
+                "response.output_text.delta" => text.push_str(event["delta"].as_str().unwrap_or_default()),
+                "response.completed" => {
+                    if text.is_empty() {
+                        text = output_text(&event["response"]);
+                    }
+                    return Ok(text);
+                }
+                "response.failed" => return Err(failed(&event["response"]["error"])),
+                "error" => return Err(failed(&event)),
+                "response.incomplete" => {
+                    let reason = event["response"]["incomplete_details"]["reason"].as_str().unwrap_or("no reason given");
+                    return Err(Failure::lasting(format!("The language model stopped before the minutes were complete ({reason}).")));
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+/// The text of a finished response, for an answer that came without deltas.
+fn output_text(response: &serde_json::Value) -> String {
+    let items = response["output"].as_array().into_iter().flatten();
+    items
+        .flat_map(|item| item["content"].as_array().into_iter().flatten())
+        .filter(|part| part["type"] == "output_text")
+        .filter_map(|part| part["text"].as_str())
+        .collect()
+}
+
+fn failed(error: &serde_json::Value) -> Failure {
+    let code = error["code"].as_str().unwrap_or_default();
+    if let Some((message, passing)) = crate::chatgpt::plan_failure(code) {
+        return Failure { message, passing };
+    }
+    let message = error["message"].as_str().filter(|message| !message.is_empty()).unwrap_or(code);
+    Failure {
+        message: format!("The language model failed: {message}"),
+        passing: matches!(code, "server_error" | "rate_limit_exceeded"),
+    }
 }
 
 pub(crate) fn is_loopback(url: &str) -> bool {
@@ -304,6 +412,7 @@ mod tests {
 
     fn config_for(server: &wiremock::MockServer) -> LlmConfig {
         LlmConfig {
+            api: LlmApi::ChatCompletions,
             base_url: server.uri(),
             api_key: "key".to_string(),
             model: "model".to_string(),
@@ -387,9 +496,118 @@ mod tests {
         assert_eq!(server.received_requests().await.unwrap().len(), 1);
     }
 
+    fn plan_config(server: &wiremock::MockServer) -> LlmConfig {
+        LlmConfig {
+            api: LlmApi::ChatGptPlan,
+            ..config_for(server)
+        }
+    }
+
+    /// A Responses stream as the server sends it: one event per `data:` line.
+    fn stream(events: &[serde_json::Value]) -> wiremock::ResponseTemplate {
+        let body: String = events
+            .iter()
+            .map(|event| format!("event: {}\ndata: {event}\n\n", event["type"].as_str().unwrap()))
+            .collect();
+        wiremock::ResponseTemplate::new(200).insert_header("content-type", "text/event-stream").set_body_string(body)
+    }
+
+    #[tokio::test]
+    async fn on_the_chatgpt_plan_the_answer_is_streamed_and_nothing_is_stored() {
+        use wiremock::matchers::{method, path};
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(method("POST"))
+            .and(path("/responses"))
+            .respond_with(stream(&[
+                serde_json::json!({ "type": "response.created" }),
+                serde_json::json!({ "type": "response.output_text.delta", "delta": "## Sum" }),
+                serde_json::json!({ "type": "response.output_text.delta", "delta": "mary 总结\nDone." }),
+                serde_json::json!({ "type": "response.completed", "response": {} }),
+            ]))
+            .mount(&server)
+            .await;
+
+        let template = crate::templates::template("discussion");
+        let minutes = write_minutes(&plan_config(&server), "Be brief.", template, about(), "[00:00] hello", |_, _| {}).await;
+
+        assert_eq!(minutes.unwrap(), "## Summary 总结\nDone.");
+        let sent: serde_json::Value = server.received_requests().await.unwrap()[0].body_json().unwrap();
+        assert_eq!((sent["store"].as_bool(), sent["stream"].as_bool()), (Some(false), Some(true)));
+        assert!(sent["instructions"].as_str().unwrap().starts_with("Be brief."));
+        assert_eq!(sent["input"][0]["role"], "user");
+        // The plan turns these away.
+        assert!(sent.get("temperature").is_none() && sent.get("messages").is_none(), "{sent}");
+    }
+
+    #[tokio::test]
+    async fn an_answer_without_deltas_is_taken_from_the_finished_response() {
+        use wiremock::matchers::method;
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(method("POST"))
+            .respond_with(stream(&[serde_json::json!({ "type": "response.completed", "response": { "output": [
+                { "type": "reasoning", "content": [] },
+                { "type": "message", "content": [{ "type": "output_text", "text": "## Summary" }] },
+            ]}})]))
+            .mount(&server)
+            .await;
+
+        let template = crate::templates::template("discussion");
+        let minutes = write_minutes(&plan_config(&server), "s", template, about(), "[00:00] hello", |_, _| {}).await;
+
+        assert_eq!(minutes.unwrap(), "## Summary");
+    }
+
+    #[tokio::test]
+    async fn a_used_up_plan_says_so_at_once_whether_it_is_told_in_the_stream_or_by_the_status() {
+        use wiremock::matchers::method;
+        for refusal in [
+            stream(&[serde_json::json!({ "type": "response.failed", "response": { "error": {
+                "code": "subscription_sharing_usage_limit_exceeded", "message": "limit" } } })]),
+            wiremock::ResponseTemplate::new(429).set_body_json(serde_json::json!({ "error": {
+                "code": "subscription_sharing_usage_limit_exceeded", "message": "limit" } })),
+        ] {
+            let server = wiremock::MockServer::start().await;
+            wiremock::Mock::given(method("POST")).respond_with(refusal).mount(&server).await;
+
+            let template = crate::templates::template("discussion");
+            let error = write_minutes(&plan_config(&server), "s", template, about(), "[00:00] hello", |_, _| {})
+                .await
+                .unwrap_err();
+
+            assert!(error.starts_with(crate::chatgpt::USAGE_LIMIT), "{error}");
+            // Waiting a minute does not bring the plan's allowance back.
+            assert_eq!(server.received_requests().await.unwrap().len(), 1);
+        }
+    }
+
+    #[tokio::test]
+    async fn a_stream_that_ends_before_the_response_is_complete_is_tried_again() {
+        use wiremock::matchers::method;
+        let server = wiremock::MockServer::start().await;
+        wiremock::Mock::given(method("POST"))
+            .respond_with(stream(&[serde_json::json!({ "type": "response.output_text.delta", "delta": "## Half" })]))
+            .up_to_n_times(1)
+            .mount(&server)
+            .await;
+        wiremock::Mock::given(method("POST"))
+            .respond_with(stream(&[
+                serde_json::json!({ "type": "response.output_text.delta", "delta": "## Whole" }),
+                serde_json::json!({ "type": "response.completed", "response": {} }),
+            ]))
+            .mount(&server)
+            .await;
+
+        let template = crate::templates::template("discussion");
+        let minutes = write_minutes(&plan_config(&server), "s", template, about(), "[00:00] hello", |_, _| {}).await;
+
+        assert_eq!(minutes.unwrap(), "## Whole");
+        assert_eq!(server.received_requests().await.unwrap().len(), 2);
+    }
+
     #[tokio::test]
     async fn minutes_need_a_configured_model() {
         let config = LlmConfig {
+            api: LlmApi::ChatCompletions,
             base_url: String::new(),
             api_key: String::new(),
             model: String::new(),

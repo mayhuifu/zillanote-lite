@@ -2,6 +2,7 @@
 //!
 //! ```text
 //! <data dir>/settings.json
+//! <data dir>/chatgpt.json                the ChatGPT sign-in, its tokens kept with the other secrets
 //! <data dir>/zillanote.log                what the app did, for when something went wrong
 //! <data dir>/voices.json                  the voices the user has named
 //! <data dir>/models/                      Qwen3-ASR weights, if not taken from LM Studio
@@ -16,6 +17,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::chatgpt::{ChatGpt, Tokens};
 use crate::email::EmailSettings;
 use crate::secrets::{self, SecretStore};
 use crate::templates::{DEFAULT_SYSTEM_PROMPT, DEFAULT_TEMPLATE, PREVIOUS_SYSTEM_PROMPTS};
@@ -24,6 +26,18 @@ use crate::voices::{MeetingSpeaker, Voice};
 
 pub const DATA_DIR_ENV: &str = "ZILLANOTE_DATA_DIR";
 const APP_FOLDER: &str = "com.zillanote.lite";
+
+/// Who writes the minutes.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LlmProvider {
+    /// Any endpoint with OpenAI's chat completions API, named in Settings: LM Studio or
+    /// Ollama on this computer, or a hosted API with a key.
+    #[default]
+    Compatible,
+    /// The user's ChatGPT plan, after signing in with ChatGPT (`chatgpt.rs`).
+    Chatgpt,
+}
 
 /// Who turns the speech into text.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -83,6 +97,9 @@ fn default_template() -> String {
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 #[serde(default)]
 pub struct Settings {
+    pub llm_provider: LlmProvider,
+    /// The model to ask for on the ChatGPT plan, by its slug.
+    pub chatgpt_model: String,
     pub llm_base_url: String,
     pub llm_api_key: String,
     pub llm_model: String,
@@ -129,6 +146,8 @@ impl Settings {
 impl Default for Settings {
     fn default() -> Self {
         Self {
+            llm_provider: LlmProvider::Compatible,
+            chatgpt_model: String::new(),
             // LM Studio's local server.
             llm_base_url: "http://localhost:1234/v1".to_string(),
             llm_api_key: String::new(),
@@ -282,6 +301,63 @@ impl Store {
         if self.secrets.is_some() && in_file {
             let _ = self.save_settings(&self.settings());
         }
+    }
+
+    // --- ChatGPT ---
+
+    /// The ChatGPT sign-in, with its tokens: these come from the keychain where this build
+    /// keeps secrets, so this may ask the keychain.
+    pub fn chatgpt(&self) -> ChatGpt {
+        let mut saved = self.chatgpt_file();
+        if saved.tokens.is_none()
+            && let Some(secrets) = &self.secrets
+        {
+            match secrets.get(secrets::CHATGPT_TOKENS) {
+                Ok(text) => saved.tokens = text.and_then(|text| serde_json::from_str::<Tokens>(&text).ok()),
+                Err(error) => tracing::warn!(%error, "chatgpt_tokens_unreadable"),
+            }
+        }
+        saved
+    }
+
+    /// The ChatGPT sign-in without its tokens, which never asks the keychain.
+    pub fn chatgpt_without_tokens(&self) -> ChatGpt {
+        ChatGpt {
+            tokens: None,
+            ..self.chatgpt_file()
+        }
+    }
+
+    /// What `chatgpt.json` itself holds: tokens only where no keychain took them.
+    fn chatgpt_file(&self) -> ChatGpt {
+        std::fs::read_to_string(self.root.join("chatgpt.json"))
+            .ok()
+            .and_then(|text| serde_json::from_str(&text).ok())
+            .unwrap_or_default()
+    }
+
+    /// No tokens means none: they are removed from wherever they were kept. Tokens the keychain
+    /// will not take stay in the file, as other secrets do.
+    pub fn save_chatgpt(&self, value: &ChatGpt) -> Result<(), String> {
+        let mut on_disk = value.clone();
+        if let Some(secrets) = &self.secrets {
+            let text = match &on_disk.tokens {
+                Some(tokens) => serde_json::to_string(tokens).map_err(|e| e.to_string())?,
+                None => String::new(),
+            };
+            match secrets.set(secrets::CHATGPT_TOKENS, &text) {
+                Ok(()) => on_disk.tokens = None,
+                Err(error) => tracing::warn!(%error, "chatgpt_tokens_kept_in_file"),
+            }
+        }
+        let path = self.root.join("chatgpt.json");
+        write_json(&path, &on_disk)?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+        }
+        Ok(())
     }
 
     // --- meetings ---
@@ -517,6 +593,51 @@ mod tests {
         let file = std::fs::read_to_string(dir.path().join("settings.json")).unwrap();
         assert!(!file.contains("sk-secret") && !file.contains("asr-secret"), "{file}");
         assert_eq!(store.settings(), secret_settings());
+    }
+
+    #[test]
+    fn the_chatgpt_tokens_go_to_the_keychain_and_never_into_the_file() {
+        let (dir, store) = store();
+        let keychain = Arc::new(secrets::MemorySecrets::default());
+        let store = store.with_secrets(Some(keychain.clone()));
+        let signed_in = ChatGpt {
+            host_id: "urn:uuid:x".to_string(),
+            tokens: Some(Tokens {
+                access_token: "access-secret".to_string(),
+                refresh_token: "refresh-secret".to_string(),
+                expires_at: 1,
+            }),
+            ..ChatGpt::default()
+        };
+
+        store.save_chatgpt(&signed_in).unwrap();
+
+        let file = std::fs::read_to_string(dir.path().join("chatgpt.json")).unwrap();
+        assert!(!file.contains("secret") && file.contains("urn:uuid:x"), "{file}");
+        assert_eq!(store.chatgpt(), signed_in);
+        assert_eq!(store.chatgpt_without_tokens().tokens, None);
+
+        store.save_chatgpt(&ChatGpt { tokens: None, ..signed_in }).unwrap();
+        assert!(keychain.values.lock().unwrap().is_empty());
+        assert_eq!(store.chatgpt().tokens, None);
+    }
+
+    #[test]
+    fn without_a_keychain_the_chatgpt_tokens_stay_in_their_own_file() {
+        let (_dir, store) = store();
+        let signed_in = ChatGpt {
+            tokens: Some(Tokens {
+                access_token: "a".to_string(),
+                refresh_token: "r".to_string(),
+                expires_at: 1,
+            }),
+            ..ChatGpt::default()
+        };
+
+        store.save_chatgpt(&signed_in).unwrap();
+
+        assert_eq!(store.chatgpt(), signed_in);
+        assert_eq!(store.chatgpt_without_tokens().tokens, None);
     }
 
     #[test]
