@@ -4,6 +4,10 @@
 //! recording was processed. Naming is the only thing that teaches the app a voice:
 //! recognizing someone in a later meeting never adds to what is stored about them, so a
 //! wrong guess cannot feed on itself.
+//!
+//! A voice print is biometric data. Forgetting a voice takes it out of every meeting too, and
+//! with recognition turned off no voice print is kept at all: a name then only labels the
+//! speaker in that meeting.
 
 use speakers::KnownSpeaker;
 
@@ -52,8 +56,14 @@ pub fn known_speakers(voices: &[Voice]) -> Vec<KnownSpeaker> {
 /// Gives `speaker` the name `name`, teaching `voices` what that person sounds like.
 /// An existing voice of that name gets another example; otherwise a new voice is made.
 /// A speaker that carried another name before takes its example back from that voice.
+/// A speaker without a voice print (recognition was off, or the voice was forgotten) is only
+/// labelled, in this meeting.
 pub fn name_speaker(voices: &mut Vec<Voice>, speaker: &mut MeetingSpeaker, name: &str, new_id: impl FnOnce() -> String) {
     let name = name.trim();
+    if speaker.centroid.is_empty() {
+        label_speaker(voices, speaker, name);
+        return;
+    }
     if let Some(previous) = speaker.voice_id.take() {
         forget_example(voices, &previous, &speaker.centroid);
     }
@@ -82,10 +92,35 @@ pub fn name_speaker(voices: &mut Vec<Voice>, speaker: &mut MeetingSpeaker, name:
 
 /// Takes the name off `speaker` again.
 pub fn unname_speaker(voices: &mut Vec<Voice>, speaker: &mut MeetingSpeaker) {
+    label_speaker(voices, speaker, "");
+}
+
+/// Names `speaker` in its own meeting only, remembering nothing about the voice; an empty
+/// name gives back "Speaker 2". A voice it was taught to before takes that example back.
+pub fn label_speaker(voices: &mut Vec<Voice>, speaker: &mut MeetingSpeaker, name: &str) {
     if let Some(previous) = speaker.voice_id.take() {
         forget_example(voices, &previous, &speaker.centroid);
     }
-    speaker.label = default_label(speaker.index);
+    let name = name.trim();
+    speaker.label = if name.is_empty() { default_label(speaker.index) } else { name.to_string() };
+}
+
+/// Whether the speaker carries a name the user gave, rather than "Speaker 2".
+pub fn is_named(speaker: &MeetingSpeaker) -> bool {
+    speaker.voice_id.is_some() || speaker.label != default_label(speaker.index)
+}
+
+/// Takes a forgotten voice out of one meeting: its speakers lose their voice print and the
+/// link to the voice, and keep the name the transcript already shows. Says whether anything
+/// changed.
+pub fn forget_in_meeting(speakers: &mut [MeetingSpeaker], voice_id: &str) -> bool {
+    let mut changed = false;
+    for speaker in speakers.iter_mut().filter(|speaker| speaker.voice_id.as_deref() == Some(voice_id)) {
+        speaker.voice_id = None;
+        speaker.centroid.clear();
+        changed = true;
+    }
+    changed
 }
 
 fn forget_example(voices: &mut Vec<Voice>, voice_id: &str, example: &[f32]) {
@@ -160,6 +195,47 @@ mod tests {
 
         assert!(voices.is_empty());
         assert_eq!((speaker.label.as_str(), speaker.voice_id), ("Speaker 2", None));
+    }
+
+    #[test]
+    fn a_speaker_without_a_voice_print_is_named_in_its_meeting_only() {
+        let mut voices = Vec::new();
+        let mut speaker = speaker(2, &[]);
+
+        name_speaker(&mut voices, &mut speaker, " Ada ", ids());
+
+        assert!(voices.is_empty());
+        assert_eq!((speaker.label.as_str(), speaker.voice_id.as_deref()), ("Ada", None));
+        assert!(is_named(&speaker));
+        unname_speaker(&mut voices, &mut speaker);
+        assert_eq!(speaker.label, "Speaker 3");
+        assert!(!is_named(&speaker));
+    }
+
+    #[test]
+    fn labelling_a_speaker_that_taught_a_voice_takes_the_example_back() {
+        let mut voices = Vec::new();
+        let mut speaker = speaker(0, &[1.0, 0.0]);
+        name_speaker(&mut voices, &mut speaker, "Hui", ids());
+
+        label_speaker(&mut voices, &mut speaker, "Hui");
+
+        assert!(voices.is_empty(), "nothing is remembered about the voice any more");
+        assert_eq!((speaker.label.as_str(), speaker.voice_id), ("Hui", None));
+    }
+
+    #[test]
+    fn a_forgotten_voice_leaves_the_meeting_with_its_voice_print_and_keeps_the_name_shown() {
+        let mut speakers = vec![speaker(0, &[1.0, 0.0]), speaker(1, &[0.0, 1.0])];
+        let mut voices = Vec::new();
+        name_speaker(&mut voices, &mut speakers[0], "Hui", ids());
+
+        assert!(forget_in_meeting(&mut speakers, "voice-1"));
+
+        assert_eq!((speakers[0].label.as_str(), speakers[0].voice_id.as_deref()), ("Hui", None));
+        assert!(speakers[0].centroid.is_empty());
+        assert_eq!(speakers[1].centroid, [0.0, 1.0], "another speaker's is no business of this");
+        assert!(!forget_in_meeting(&mut speakers, "voice-1"));
     }
 
     #[test]

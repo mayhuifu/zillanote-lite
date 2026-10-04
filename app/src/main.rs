@@ -83,6 +83,8 @@ struct MeetingDetail {
     minutes: Option<String>,
     transcript: Option<String>,
     speakers: Vec<SpeakerView>,
+    /// Naming a speaker teaches the app the voice; off, it names the speaker here only.
+    recognize_voices: bool,
 }
 
 /// A speaker as the window needs it: what the voice sounds like stays in the engine.
@@ -110,11 +112,12 @@ fn meeting_detail(store: &Store, id: &str) -> Result<MeetingDetail, String> {
             .into_iter()
             .map(|speaker| SpeakerView {
                 index: speaker.index,
-                named: speaker.voice_id.is_some(),
+                named: engine::voices::is_named(&speaker),
                 label: speaker.label,
                 seconds: speaker.seconds,
             })
             .collect(),
+        recognize_voices: store.settings_without_secrets().recognize_voices,
     })
 }
 
@@ -343,6 +346,11 @@ fn list_voices(state: State<'_, App>) -> Vec<VoiceView> {
 #[tauri::command]
 fn forget_voice(state: State<'_, App>, id: String) -> Result<(), String> {
     state.pipeline.forget_voice(&id)
+}
+
+#[tauri::command]
+fn forget_all_voices(state: State<'_, App>) -> Result<(), String> {
+    state.pipeline.forget_all_voices()
 }
 
 #[tauri::command]
@@ -1068,6 +1076,7 @@ fn main() {
             name_speaker,
             list_voices,
             forget_voice,
+            forget_all_voices,
             download_models,
             cancel_download,
             download_status,

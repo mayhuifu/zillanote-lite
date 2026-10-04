@@ -21,6 +21,7 @@ let activeTab = "minutes";
 let recording = null; // { meetingId, startedAt }
 let templates = [];
 let speakerLabels = [];
+let recognizeVoices = true; // as the meeting on screen was told
 let missing = null; // { bytes, what } while models are still to be downloaded
 // How the engine starts the reason a meeting got no minutes when the plan is used up.
 const USAGE_LIMIT = "Your ChatGPT plan has reached its usage limit.";
@@ -193,6 +194,7 @@ async function showDetail(id, { keepTab = false } = {}) {
   bar.firstElementChild.style.width = `${Math.round((meeting.progress || 0) * 100)}%`;
 
   speakerLabels = detail.speakers.map((speaker) => speaker.label);
+  recognizeVoices = detail.recognize_voices;
   renderSpeakers(detail.speakers);
   $("minutes").innerHTML = detail.minutes
     ? renderMarkdown(detail.minutes)
@@ -220,7 +222,11 @@ function renderSpeakers(speakers) {
   for (const speaker of speakers) {
     const chip = document.createElement("button");
     chip.className = `speaker ${speaker.named ? "named" : ""}`;
-    chip.title = speaker.named ? "Change the name" : "Name this speaker, and ZillaNote knows the voice next time";
+    chip.title = speaker.named
+      ? "Change the name"
+      : recognizeVoices
+        ? "Name this speaker, and ZillaNote knows the voice next time"
+        : "Name this speaker in this meeting";
     chip.textContent = `${speaker.label} · ${clock(speaker.seconds)}`;
     chip.addEventListener("click", () => editSpeaker(chip, speaker));
     strip.appendChild(chip);
@@ -229,7 +235,9 @@ function renderSpeakers(speakers) {
   if (speakers.some((speaker) => !speaker.named)) {
     const hint = document.createElement("p");
     hint.className = "hint";
-    hint.textContent = "Click a speaker to name them. ZillaNote remembers the voice and names it by itself in later meetings.";
+    hint.textContent = recognizeVoices
+      ? "Click a speaker to name them. ZillaNote remembers the voice and names it by itself in later meetings."
+      : "Click a speaker to name them in this meeting.";
     strip.appendChild(hint);
   }
   strip.dataset.count = speakers.length;
@@ -243,6 +251,16 @@ function editSpeaker(chip, speaker) {
   field.placeholder = "Who is this?";
   field.value = speaker.named ? speaker.label : "";
   chip.replaceWith(field);
+  // Said where the name is typed: a remembered voice is a voice print of a person.
+  const consent = document.createElement("p");
+  consent.className = "hint consent";
+  consent.textContent = recognizeVoices
+    ? "ZillaNote will know this voice in later meetings. Name only people who agreed to that."
+    : "The name is used in this meeting only.";
+  const strip = field.closest(".speakers");
+  // In place of the general hint, which the next redraw brings back.
+  strip.querySelector(".hint:not(.consent)")?.remove();
+  strip.appendChild(consent);
   field.focus();
 
   let settled = false;
@@ -259,6 +277,7 @@ function editSpeaker(chip, speaker) {
       // Whatever happened, the field goes and the chips show what is stored; but only if
       // this meeting is still the one on screen.
       field.remove();
+      consent.remove();
       if (openId === id) showDetail(id, { keepTab: true });
     }
   };
@@ -478,6 +497,7 @@ async function showVoices() {
   renderSetupStatus();
   const list = $("voices");
   list.innerHTML = voices.length ? "" : `<li class="help">None yet: name a speaker as above, and the voice is listed here.</li>`;
+  $("forget-all-voices").hidden = voices.length < 2;
   for (const voice of voices) {
     const item = document.createElement("li");
     item.innerHTML = `<span>${escapeHtml(voice.name)}</span>`;
@@ -669,7 +689,8 @@ function renderSetupStatus() {
   status("status-prompt", terms ? `${prompt}, ${terms} ${terms === 1 ? "term" : "terms"}` : prompt);
   const to = $("email-to").value.trim();
   status("status-email", to ? `To ${to}` : "Off");
-  status("status-voices", voiceCount ? `${voiceCount} ${voiceCount === 1 ? "voice" : "voices"}` : "None yet");
+  const voices = voiceCount ? `${voiceCount} ${voiceCount === 1 ? "voice" : "voices"}` : "None yet";
+  status("status-voices", $("recognize-voices").checked ? voices : `Recognition off${voiceCount ? `, ${voices} kept` : ""}`);
 }
 
 $("open-settings").addEventListener("click", async () => {
@@ -702,6 +723,7 @@ $("open-settings").addEventListener("click", async () => {
   $("vocabulary").value = settings.vocabulary.join("\n");
   $("system-audio").checked = settings.record_system_audio;
   $("notice-calls").checked = settings.notice_calls;
+  $("recognize-voices").checked = settings.recognize_voices;
   $("stop-after-call").checked = settings.stop_when_call_ends;
   $("auto-minutes").checked = settings.auto_minutes;
   $("email-to").value = settings.email.to;
@@ -741,6 +763,7 @@ function readSettings() {
     max_chars_per_call: Number($("settings").dataset.maxChars) || 24000,
     record_system_audio: $("system-audio").checked,
     notice_calls: $("notice-calls").checked,
+    recognize_voices: $("recognize-voices").checked,
     stop_when_call_ends: $("stop-after-call").checked,
     auto_minutes: $("auto-minutes").checked,
     asr_model: pickedModel(),
@@ -800,6 +823,12 @@ $("test-asr").addEventListener("click", async () => {
 });
 
 $("open-system-audio").addEventListener("click", () => call("open_system_audio_settings"));
+$("forget-all-voices").addEventListener("click", async () => {
+  if (!confirm("Forget every remembered voice, and take their voice prints out of every meeting? The names already in transcripts stay.")) return;
+  await call("forget_all_voices");
+  showVoices();
+});
+$("recognize-voices").addEventListener("change", renderSetupStatus);
 
 $("reset-prompt").addEventListener("click", async () => {
   $("system-prompt").value = await call("default_system_prompt");

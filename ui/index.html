@@ -185,14 +185,16 @@
 
         <section class="page" data-page="voices" hidden>
           <h2><button type="button" class="back" aria-label="Back to Settings">‹</button>Remembered voices</h2>
-          <p class="help">Name a speaker once, and ZillaNote knows the voice in later meetings and names it by itself.</p>
+          <label class="check"><input id="recognize-voices" type="checkbox" /> <span><b>Recognize named voices in later meetings</b><small>Off: speakers are still told apart in each meeting and can be named there, but no voice is remembered and no voice print is kept for new meetings.</small></span></label>
+          <p class="help">Name a speaker once, and ZillaNote knows the voice in later meetings and names it by itself. A voice print is personal data: name only people who agreed to be recognized.</p>
           <ol class="steps">
             <li>Open a meeting and choose its <b>Transcript</b> tab.</li>
             <li>Above the transcript, click a speaker, such as <span class="speaker">Speaker 1 · 04:12</span></li>
             <li>Type the name and press Enter. To use the name in the minutes too, press <b>Rewrite minutes</b> under the meeting.</li>
           </ol>
           <ul id="voices" class="voices"></ul>
-          <p class="help">A voice named wrongly can be renamed the same way, or forgotten here. Voices are told apart on this computer by pyannote's segmentation-3.0 (MIT) and WeSpeaker's ResNet34 embedding as packaged by pyannote (CC BY 4.0).</p>
+          <button type="button" id="forget-all-voices" class="text danger" hidden>Forget all voices</button>
+          <p class="help">A voice named wrongly can be renamed the same way, or forgotten here. Forgetting a voice also takes its voice print out of every meeting; the name already shown in a transcript stays as text. Voices are told apart on this computer by pyannote's segmentation-3.0 (MIT) and WeSpeaker's ResNet34 embedding as packaged by pyannote (CC BY 4.0).</p>
         </section>
 
         <menu>

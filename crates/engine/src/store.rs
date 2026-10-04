@@ -113,6 +113,9 @@ pub struct Settings {
     pub record_system_audio: bool,
     /// Write the minutes as soon as the transcript is ready, without being asked.
     pub auto_minutes: bool,
+    /// Recognize the voices the user has named in later meetings. Off, no voice print is kept
+    /// for new meetings and a name only labels the speaker in its meeting.
+    pub recognize_voices: bool,
     /// Make the record button flash when a call program opens the microphone.
     pub notice_calls: bool,
     /// Stop the recording half a minute after the call program lets the microphone go.
@@ -179,6 +182,7 @@ impl Default for Settings {
             email: EmailSettings::default(),
             record_system_audio: true,
             auto_minutes: true,
+            recognize_voices: true,
             notice_calls: true,
             stop_when_call_ends: true,
             asr_model: qwen3_asr::Qwen3AsrModel::default(),

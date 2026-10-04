@@ -103,8 +103,10 @@ GDPR) apply to you as the one recording, not to the authors of ZillaNote.
   consent is a crime, and at work a works council may have a say in such tools.
 - **A remembered voice is personal data.** Naming a voice so that it is recognized in later
   meetings is biometric identification under the GDPR: ask each person before you name them,
-  and forget their voice in Settings → Remembered voices when they ask. Without names,
-  ZillaNote only tells the speakers of one meeting apart.
+  and forget their voice in Settings → Remembered voices when they ask (that also takes their
+  voice print out of every meeting). Recognition can be turned off there altogether: speakers
+  are then only told apart, and named, within each meeting. What is kept, and for how long,
+  is in [How it works](docs/HOW-IT-WORKS.md#voice-prints).
 - **Choose where the transcript goes.** A model on your own computer sends nothing anywhere.
   A hosted model, a speech service or your ChatGPT plan receives the transcript (or, for a
   speech service, the audio) under that provider's terms; the mail account you set receives

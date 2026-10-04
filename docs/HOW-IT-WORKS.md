@@ -60,7 +60,10 @@ each part does in detail; [`DEVELOPMENT.md`](DEVELOPMENT.md) says how to build a
   recognizer's chunks are cut where the speaker changes, so every line of the transcript has
   one speaker: "Speaker 1", "Speaker 2". Click a speaker above the transcript to give the
   name; the voice is remembered (`voices.json`) and named by itself in later meetings.
-  Recognizing a voice never adds to what is stored about it; only naming does. The two
+  Recognizing a voice never adds to what is stored about it; only naming does. Settings →
+  Remembered voices can turn recognition off: speakers are then still told apart and can be
+  named, in that meeting only, and no voice print is kept (see "Voice prints" under
+  Privacy). The two
   models (32 MB, from this project's `speaker-models-1` release) live in `models/speakers/`
   of the data folder; without them transcripts simply have no names.
 - **Window:** it starts as a small bar (38 by 142 points) that floats at the right edge of
@@ -139,6 +142,24 @@ of your choosing, or OpenAI under your own ChatGPT account when you sign in with
 if any. Model files are downloaded from Hugging Face and GitHub, or their mirrors, and
 checked against pinned checksums. Nothing else leaves the computer, and nothing is sent to
 the authors of ZillaNote.
+
+### Voice prints
+
+A voice print is a list of 256 numbers that describes what a voice sounds like; it is not a
+recording, and the voice cannot be played back from it. Voice prints never leave the
+computer. Under the GDPR, one used to recognize a person is biometric data, so name only
+people who agreed to be recognized: the window says so where a name is typed.
+
+- **In each meeting** (`meetings/<id>/speakers.json`): one voice print per speaker, so a
+  speaker can be named after the meeting. Kept until the meeting is deleted.
+- **For each named voice** (`voices.json`): the voice prints of the meetings it was named in,
+  five at most (the oldest goes first). Kept until the voice is forgotten.
+- **Forget** (Settings → Remembered voices) removes the voice and takes its voice print out
+  of every meeting it was named or recognized in. The name already shown in those
+  transcripts and minutes stays, as text; rename or delete the meeting to change that.
+  **Forget all voices** does the same for every voice.
+- **Recognition off** keeps no voice print for new meetings and recognizes nobody. Voices
+  remembered before stay listed until forgotten.
 
 ## On Windows
 

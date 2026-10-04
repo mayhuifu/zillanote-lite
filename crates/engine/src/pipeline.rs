@@ -245,7 +245,9 @@ impl Pipeline {
             return unnamed();
         };
 
-        let voices = self.store.voices();
+        // With recognition off, nobody is recognized and no voice print is kept.
+        let recognize = self.store.settings_without_secrets().recognize_voices;
+        let voices = if recognize { self.store.voices() } else { Vec::new() };
         let known = voices::known_speakers(&voices);
         let shown = RefCell::new(meeting.clone());
         let on_progress = |fraction: f32| {
@@ -304,7 +306,7 @@ impl Pipeline {
                     label: voice.map_or_else(|| voices::default_label(speaker.index), |voice| voice.name.clone()),
                     voice_id: voice.map(|voice| voice.id.clone()),
                     seconds: seconds.get(speaker.index).copied().unwrap_or(0.0),
-                    centroid: speaker.centroid,
+                    centroid: if recognize { speaker.centroid } else { Vec::new() },
                 }
             })
             .collect::<Vec<_>>();
@@ -314,7 +316,8 @@ impl Pipeline {
     }
 
     /// Puts a name to one of a meeting's speakers and remembers the voice under it; an
-    /// empty name takes the name off again. The transcript's lines follow.
+    /// empty name takes the name off again. With recognition off the name stays in this
+    /// meeting. The transcript's lines follow.
     pub fn name_speaker(&self, id: &str, index: usize, name: &str) -> Result<(), String> {
         let mut speakers = self.store.speakers(id);
         let speaker = speakers
@@ -324,6 +327,8 @@ impl Pipeline {
         let mut voices = self.store.voices();
         if name.trim().is_empty() {
             voices::unname_speaker(&mut voices, speaker);
+        } else if !self.store.settings_without_secrets().recognize_voices {
+            voices::label_speaker(&mut voices, speaker, name);
         } else {
             voices::name_speaker(&mut voices, speaker, name, || {
                 format!("voice-{}", chrono::Local::now().timestamp_millis())
@@ -344,11 +349,29 @@ impl Pipeline {
         Ok(())
     }
 
-    /// Forgets a named voice. Meetings keep the name where it already stands.
+    /// Forgets a named voice: its voice prints, and the voice print of every meeting it was
+    /// named or recognized in. Meetings keep the name where it already stands, as text.
     pub fn forget_voice(&self, voice_id: &str) -> Result<(), String> {
+        // The meetings first: if one cannot be written, the voice is still listed to try again.
+        for meeting in self.store.meetings() {
+            let mut speakers = self.store.speakers(&meeting.id);
+            if voices::forget_in_meeting(&mut speakers, voice_id) {
+                self.store.save_speakers(&meeting.id, &speakers)?;
+            }
+        }
         let mut voices = self.store.voices();
         voices.retain(|voice| voice.id != voice_id);
-        self.store.save_voices(&voices)
+        self.store.save_voices(&voices)?;
+        tracing::info!(voice = voice_id, "voice_forgotten");
+        Ok(())
+    }
+
+    /// Forgets every named voice, as [`Pipeline::forget_voice`] does one.
+    pub fn forget_all_voices(&self) -> Result<(), String> {
+        for voice in self.store.voices() {
+            self.forget_voice(&voice.id)?;
+        }
+        Ok(())
     }
 
     /// What the recognizer needs to start, or what is missing.
@@ -798,6 +821,80 @@ mod tests {
         assert_eq!(meeting.status, Status::Failed);
         assert!(meeting.error.unwrap().starts_with("No speech service is set up"));
         assert!(pipeline.waiting_for_model().is_empty());
+    }
+
+    fn meeting_with_speakers(store: &Store, speakers: &[(&str, Option<&str>, &[f32])]) -> Meeting {
+        let meeting = store.create_meeting(chrono::Local::now(), "discussion").unwrap();
+        let speakers = speakers
+            .iter()
+            .enumerate()
+            .map(|(index, (label, voice_id, centroid))| MeetingSpeaker {
+                index,
+                label: label.to_string(),
+                voice_id: voice_id.map(str::to_string),
+                seconds: 10.0,
+                centroid: centroid.to_vec(),
+            })
+            .collect::<Vec<_>>();
+        store.save_speakers(&meeting.id, &speakers).unwrap();
+        meeting
+    }
+
+    #[test]
+    fn forgetting_a_voice_takes_its_voice_print_out_of_every_meeting() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path().to_path_buf()).unwrap();
+        let pipeline = Pipeline {
+            store: store.clone(),
+            bundled_server_dirs: Vec::new(),
+            chatgpt: chatgpt::Endpoints::openai(),
+        };
+        store
+            .save_voices(&[
+                voices::Voice { id: "v-ada".into(), name: "Ada".into(), examples: vec![vec![1.0, 0.0]] },
+                voices::Voice { id: "v-bo".into(), name: "Bo".into(), examples: vec![vec![0.0, 1.0]] },
+            ])
+            .unwrap();
+        // Named in one meeting, recognized in another, absent from a third.
+        let named = meeting_with_speakers(&store, &[("Ada", Some("v-ada"), &[1.0, 0.0]), ("Bo", Some("v-bo"), &[0.0, 1.0])]);
+        let recognized = meeting_with_speakers(&store, &[("Ada", Some("v-ada"), &[0.9, 0.1])]);
+        let other = meeting_with_speakers(&store, &[("Speaker 1", None, &[0.5, 0.5])]);
+
+        pipeline.forget_voice("v-ada").unwrap();
+
+        assert_eq!(store.voices().iter().map(|voice| voice.name.as_str()).collect::<Vec<_>>(), ["Bo"]);
+        for id in [&named.id, &recognized.id] {
+            let ada = &store.speakers(id)[0];
+            assert_eq!((ada.label.as_str(), ada.voice_id.as_deref()), ("Ada", None));
+            assert!(ada.centroid.is_empty(), "the voice print stayed in {id}");
+        }
+        assert_eq!(store.speakers(&named.id)[1].centroid, [0.0, 1.0]);
+        assert_eq!(store.speakers(&other.id)[0].centroid, [0.5, 0.5]);
+
+        pipeline.forget_all_voices().unwrap();
+        assert!(store.voices().is_empty());
+        assert!(store.speakers(&named.id)[1].centroid.is_empty());
+    }
+
+    #[test]
+    fn with_recognition_off_a_name_stays_in_its_meeting() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open(dir.path().to_path_buf()).unwrap();
+        let mut settings = store.settings();
+        settings.recognize_voices = false;
+        store.save_settings(&settings).unwrap();
+        let pipeline = Pipeline {
+            store: store.clone(),
+            bundled_server_dirs: Vec::new(),
+            chatgpt: chatgpt::Endpoints::openai(),
+        };
+        let meeting = meeting_with_speakers(&store, &[("Speaker 1", None, &[1.0, 0.0])]);
+
+        pipeline.name_speaker(&meeting.id, 0, "Ada").unwrap();
+
+        assert!(store.voices().is_empty());
+        assert_eq!(store.speakers(&meeting.id)[0].label, "Ada");
+        assert_eq!(store.speakers(&meeting.id)[0].voice_id, None);
     }
 
     fn meeting_with_a_transcript(store: &Store) -> Meeting {
