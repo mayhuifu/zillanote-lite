@@ -12,10 +12,26 @@
 <meta property="og:url" content="https://mayhuifu.github.io/zillanote-lite/">
 <meta name="twitter:card" content="summary_large_image">
 <link rel="icon" href="favicon.png">
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Onest:wght@400;600;800&display=swap" rel="stylesheet">
 <style>
+  /* Onest from this site, not from Google Fonts, so a visit tells nobody else who came
+     (OFL 1.1, fonts/OFL.txt). One variable file per script covers every weight. */
+  @font-face {
+    font-family: "Onest";
+    font-style: normal;
+    font-weight: 400 800;
+    font-display: swap;
+    src: url(fonts/onest-latin.woff2) format("woff2");
+    unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD;
+  }
+  @font-face {
+    font-family: "Onest";
+    font-style: normal;
+    font-weight: 400 800;
+    font-display: swap;
+    src: url(fonts/onest-latin-ext.woff2) format("woff2");
+    unicode-range: U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+0304, U+0308, U+0329, U+1D00-1DBF, U+1E00-1E9F, U+1EF2-1EFF, U+2020, U+20A0-20AB, U+20AD-20C0, U+2113, U+2C60-2C7F, U+A720-A7FF;
+  }
+
   /* Always dark, whatever the visitor's system is set to: the graphite of the app's bar. */
   :root {
     --paper: #1b1b20;
@@ -348,6 +364,9 @@
     <p>Only the transcript leaves your computer, and only for the language model you set (your
       ChatGPT account, a service of your choice, or none at all with a model on your computer);
       the minutes go only to the mail server you set.</p>
+    <p>Recording people comes with duties: tell everyone before you record, and ask before you
+      name their voice. <a href="https://github.com/mayhuifu/zillanote-lite#responsible-use">Responsible
+      use</a>.</p>
     <p>ChatGPT and the ChatGPT logo are trademarks of OpenAI. ZillaNote is not made by or
       affiliated with OpenAI; it uses OpenAI's Sign in with ChatGPT.</p>
     <p>ZillaNote is free and open source under the MIT or Apache 2.0 license.

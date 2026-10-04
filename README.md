@@ -13,7 +13,8 @@
 
 <p align="center">
   <sub>One click downloads the latest version. The <a href="https://mayhuifu.github.io/zillanote-lite/">website</a> picks the right one for your computer.
-  The first start needs <a href="#install">one extra click</a>.</sub>
+  The first start needs <a href="#install">one extra click</a>.
+  Recording people comes with duties: see <a href="#responsible-use">responsible use</a>.</sub>
 </p>
 
 <p align="center">
@@ -90,6 +91,32 @@ only for the language model you set (your ChatGPT account, a service of your cho
 that runs on your computer); the minutes go
 only to the mail server you set. There is no account and no analytics, and nothing is sent to
 the authors of ZillaNote. [The details](docs/HOW-IT-WORKS.md#privacy).
+
+## Responsible use
+
+ZillaNote is a tool: how it is used is up to whoever records with it. Where you use it,
+especially at work, the data-protection and recording laws of your country (in the EU, the
+GDPR) apply to you as the one recording, not to the authors of ZillaNote.
+
+- **Tell people before you record.** Everyone in the meeting should know it is being
+  recorded. In some countries, Germany among them, recording a private conversation without
+  consent is a crime, and at work a works council may have a say in such tools.
+- **A remembered voice is personal data.** Naming a voice so that it is recognized in later
+  meetings is biometric identification under the GDPR: ask each person before you name them,
+  and forget their voice in Settings → Remembered voices when they ask. Without names,
+  ZillaNote only tells the speakers of one meeting apart.
+- **Choose where the transcript goes.** A model on your own computer sends nothing anywhere.
+  A hosted model, a speech service or your ChatGPT plan receives the transcript (or, for a
+  speech service, the audio) under that provider's terms; the mail account you set receives
+  the minutes. For colleagues' or customers' data at work, use providers your organization
+  has approved, with a data-processing agreement, and mind where they are based.
+- **Keep what you need, and protect it.** Every meeting is a plain folder on your disk. Turn
+  on disk encryption (FileVault, BitLocker), and delete recordings you no longer need:
+  deleting a meeting removes everything recorded in it.
+
+ZillaNote has no account and sends nothing to its authors, who never see your recordings,
+transcripts or voices. The software is provided without warranty, as its licenses say. This
+section is guidance, not legal advice.
 
 ## Free and open source
 

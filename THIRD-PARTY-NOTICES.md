@@ -156,10 +156,17 @@ SOFTWARE.
 
 ### The ChatGPT logo
 
-`ui/chatgpt-logo.svg` is OpenAI's logo, from OpenAI's Sign in with ChatGPT developer assets
+`ui/chatgpt-logo.svg` (and its copy `docs/chatgpt-logo.svg` on the website) is OpenAI's logo, from OpenAI's Sign in with ChatGPT developer assets
 (developers.openai.com/assets/siwc/sign-in-buttons/chatgpt-logo-white.svg). It is a
 trademark of OpenAI and is used only on the "Continue with ChatGPT" button, as OpenAI's
 guidelines for that button ask. It is not covered by ZillaNote's license.
+
+### On the website: the Onest font
+
+`docs/fonts/onest-latin.woff2` and `docs/fonts/onest-latin-ext.woff2` are the Onest typeface,
+served by the website itself rather than by Google Fonts. Copyright 2021 The Onest Project
+Authors (https://github.com/googlefonts/onest), licensed under the SIL Open Font License 1.1;
+the full license is in `docs/fonts/OFL.txt`.
 
 ## Downloaded by the app, on the user's request
 
