@@ -22,33 +22,35 @@ html, body { margin: 0; height: 100%; background: transparent; overflow: hidden;
 
 /* Everything here is six tenths of the first bar (64 by 236), which took too much of the
    screen. Two things did not shrink all the way, because they have to be read and hit: the
-   timer's digits and the way out. */
+   timer's digits and the way out. It lies on its side now, 142 by 38: the logo, the record
+   button, the level over the time, and the tab that opens the window, left to right. */
 .bar {
   position: relative;
   height: 100%;
-  display: flex; flex-direction: column; align-items: center;
+  display: flex; flex-direction: row; align-items: center;
   background: var(--surface); color: var(--text);
   border: 1px solid var(--line); border-radius: 10px;
   overflow: hidden; cursor: default;
 }
 
 /* The way out: only there while the pointer is over the bar, so it is never hit by accident. */
-.quit { position: absolute; top: 2px; right: 2px; width: 11px; height: 11px; border-radius: 50%; display: grid; place-items: center; color: var(--muted); background: var(--line); opacity: 0; transition: opacity 0.15s; }
+.quit { position: absolute; top: 2px; left: 2px; width: 11px; height: 11px; border-radius: 50%; display: grid; place-items: center; color: var(--muted); background: var(--line); opacity: 0; transition: opacity 0.15s; }
 .quit svg { width: 6px; height: 6px; }
 .bar:hover .quit { opacity: 1; }
 .quit:hover { color: #fff; background: var(--red); }
 
-.logo { width: 20px; height: 20px; margin-top: 6px; border-radius: 5px; }
+.logo { width: 20px; height: 20px; margin-left: 7px; border-radius: 5px; flex: none; }
 
-.meter { display: flex; align-items: center; gap: 2px; height: 13px; margin-top: 6px; }
+.readout { width: 32px; margin-left: 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; flex: none; }
+.meter { display: flex; align-items: center; gap: 2px; height: 13px; }
 .meter i { width: 2px; height: 3px; border-radius: 1px; background: var(--muted); opacity: 0.55; transition: height 0.1s ease-out; }
 .recording .meter i { background: var(--text); opacity: 1; }
 
-hr { width: 20px; border: none; border-top: 1px solid var(--line); margin: 5px 0 6px; }
+hr { width: 0; height: 20px; border: none; border-left: 1px solid var(--line); margin: 0 5px; flex: none; }
 
 button { border: none; background: none; padding: 0; color: inherit; cursor: pointer; font: inherit; }
 
-.record { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; border: 1.5px solid var(--line); }
+.record { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; border: 1.5px solid var(--line); flex: none; }
 .record:hover { border-color: var(--muted); }
 .record .shape { width: 13px; height: 13px; border-radius: 50%; background: radial-gradient(circle at 36% 30%, var(--violet-lighter), var(--brand) 50%, var(--violet-deep)); transition: border-radius 0.15s, width 0.15s, height 0.15s, background 0.15s; }
 .recording .record .shape { width: 10px; height: 10px; border-radius: 2px; background: var(--red); }
@@ -60,13 +62,15 @@ button { border: none; background: none; padding: 0; color: inherit; cursor: poi
   50% { box-shadow: 0 0 0 4px rgba(155, 133, 238, 0.6); }
 }
 
-.timer { height: 10px; margin-top: 3px; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; color: var(--muted); }
+.timer { height: 10px; white-space: nowrap; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; color: var(--muted); }
+/* Nothing to time: the level alone, in the middle of its column. */
+.timer:empty { display: none; }
 .recording .timer { color: var(--red); }
 /* The call ended: the seconds left, in the violet of a choice, and a click keeps recording. */
 .ending .timer { color: var(--violet-lighter); cursor: pointer; animation: blink 1s steps(2, jump-none) infinite; }
 @keyframes blink { to { opacity: 0.45; } }
 
-.status { position: relative; width: 16px; height: 16px; margin-top: 2px; display: grid; place-items: center; }
+.status { position: relative; width: 16px; height: 16px; margin-left: 2px; display: grid; place-items: center; flex: none; }
 .status .ring { position: absolute; inset: 0; border-radius: 50%; background: conic-gradient(var(--brand) calc(var(--progress, 0) * 1turn), var(--line) 0); -webkit-mask: radial-gradient(circle, transparent 5px, #000 5.5px); mask: radial-gradient(circle, transparent 5px, #000 5.5px); }
 .status.spin .ring { background: conic-gradient(var(--brand) 0.28turn, var(--line) 0); animation: spin 1.1s linear infinite; }
 .status .glyph { font-size: 8px; font-weight: 700; }
@@ -75,7 +79,8 @@ button { border: none; background: none; padding: 0; color: inherit; cursor: poi
 .status.failed .glyph { color: var(--red); font-size: 10px; }
 @keyframes spin { to { transform: rotate(1turn); } }
 
-/* The tab that opens the window, in the violet of the icon: light at the top, deep below. */
-.expand { margin-top: auto; width: 100%; height: 19px; display: grid; place-items: center; background: linear-gradient(180deg, var(--violet-light), var(--violet-deep)); color: #fff; }
+/* The tab that opens the window, in the violet of the icon: light at the top, deep below,
+   along the bar's right end. */
+.expand { margin-left: auto; width: 18px; height: 100%; flex: none; display: grid; place-items: center; background: linear-gradient(180deg, var(--violet-light), var(--violet-deep)); color: #fff; }
 .expand svg { width: 12px; height: 12px; }
 .expand:hover { background: linear-gradient(180deg, var(--violet-lighter), var(--violet-light)); }

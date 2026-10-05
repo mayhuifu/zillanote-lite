@@ -66,9 +66,9 @@ each part does in detail; [`DEVELOPMENT.md`](DEVELOPMENT.md) says how to build a
   Privacy). The two
   models (32 MB, from this project's `speaker-models-1` release) live in `models/speakers/`
   of the data folder; without them transcripts simply have no names.
-- **Window:** it starts as a small bar (38 by 142 points) that floats at the right edge of
-  the screen: logo, level meter, record/stop, a progress ring while a meeting is processed.
-  The violet tab at the bottom opens the full window; closing that window (or its down-arrow) goes back to the bar. Drag the
+- **Window:** it starts as a small horizontal bar (142 by 38 points) that floats at the right
+  edge of the screen: logo, record/stop, the level meter over the time, a progress ring while
+  a meeting is processed. The violet tab at its right end opens the full window; closing that window (or its down-arrow) goes back to the bar. Drag the
   bar by its logo.
 - **Email:** fill in one address in Settings, plus the mail account that sends (its app
   password, or authorization code for QQ and 163), and every set of minutes is mailed there
@@ -172,9 +172,9 @@ there.
 - Who has the microphone open is read from the audio sessions of every microphone, so the
   flashing button and the stop after a call work the same; only checked by the build so far.
 - The speech engine is llama.cpp's CPU build for Windows.
-- The bar is the 38 by 142 points it is on the Mac. Windows has a smallest width of its own
-  for a window, several times that; the app overrides it for the bar at start, and the build
-  job fails if the bar reports any other size.
+- The bar is the 142 by 38 points it is on the Mac. Windows has a smallest size of its own
+  for a window; the app overrides it for the bar at start, and the build job fails if the
+  bar reports any other size.
 - The installer is not signed, so SmartScreen says "Windows protected your PC": choose
   **More info**, then **Run anyway**.
 - Settings, meetings and the log are under `%APPDATA%\com.zillanote.lite\`.

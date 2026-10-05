@@ -79,7 +79,7 @@ jobs:
           if (-not $bar) { throw "The app did not say how big its bar is." }
           $width = [int]$bar.Matches[0].Groups[1].Value
           $height = [int]$bar.Matches[0].Groups[2].Value
-          if ($width -ne 38 -or [math]::Abs($height - 142) -gt 2) { throw "The bar is $width by $height points, not 38 by 142." }
+          if ($width -ne 142 -or [math]::Abs($height - 38) -gt 2) { throw "The bar is $width by $height points, not 142 by 38." }
 
       - name: Attach to the release
         if: startsWith(github.ref, 'refs/tags/v')

@@ -45,7 +45,7 @@ A Cargo workspace plus a page folder:
 - `app`: the Tauri shell. `app/src/main.rs` is thin: `#[tauri::command]`s that call
   `engine::pipeline::Pipeline` and `engine::store::Store`, plus events (`meeting-updated`,
   `recording-level`, `recording-changed`, `notice`, `download-progress`, `call-state`) sent to
-  both windows. Two windows: `mini` (the 38×142 floating bar, `ui/mini.html`) and `main`
+  both windows. Two windows: `mini` (the 142×38 floating bar, horizontal, `ui/mini.html`) and `main`
   (`ui/index.html`).
 - `ui`: plain HTML, CSS and ES modules. No npm, no bundler, no build step: Tauri serves the
   folder as is (`frontendDist: ../ui`, `withGlobalTauri`), and `ui/common.js` takes
@@ -115,7 +115,7 @@ thread reads `Store::settings_without_secrets()`, because `settings()` goes to t
   so type-check Windows-only code in a scratch crate. The real check is
   `.github/workflows/windows.yml`, which runs on a push to the `windows-port` branch, on a
   `v*` tag, or by hand. It runs the tests, builds the NSIS installer, starts the app until
-  `ui_ready` is logged twice, fails unless the logged `bar_size` is 38×142, and on a tag
+  `ui_ready` is logged twice, fails unless the logged `bar_size` is 142×38, and on a tag
   attaches the exe to that tag's release (`--clobber`).
 - **The Windows bar:** Windows imposes a minimum width on any window with a caption, and
   `narrow_mini()` in `main.rs` undoes it. Keep the app menu off the mini window on Windows.
@@ -133,7 +133,7 @@ thread reads `Store::settings_without_secrets()`, because `settings()` goes to t
 
 Serve a copy of `ui/` with `common.js` replaced by a stub of `invoke`/`listen` and screenshot
 it with headless Chrome (`--headless=new --screenshot`). Headless Chrome has a minimum window
-width, so show the 38×142 bar in an iframe of that size on a zoomed page. Turn transitions
+width, so show the 142×38 bar in an iframe of that size on a zoomed page. Turn transitions
 off, including on `::before`/`::after`, or pseudo-elements get caught mid-animation.
 
 ## Releasing
