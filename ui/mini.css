@@ -39,14 +39,14 @@ html, body { margin: 0; height: 100%; background: transparent; overflow: hidden;
 .bar:hover .quit { opacity: 1; }
 .quit:hover { color: #fff; background: var(--red); }
 
-.logo { width: 20px; height: 20px; margin-left: 7px; border-radius: 5px; flex: none; }
+.logo { width: 26px; height: 26px; margin-left: 6px; border-radius: 6px; flex: none; }
 
-.readout { width: 32px; margin-left: 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; flex: none; }
+.readout { width: 30px; margin-left: 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px; flex: none; }
 .meter { display: flex; align-items: center; gap: 2px; height: 13px; }
 .meter i { width: 2px; height: 3px; border-radius: 1px; background: var(--muted); opacity: 0.55; transition: height 0.1s ease-out; }
 .recording .meter i { background: var(--text); opacity: 1; }
 
-hr { width: 0; height: 20px; border: none; border-left: 1px solid var(--line); margin: 0 5px; flex: none; }
+hr { width: 0; height: 20px; border: none; border-left: 1px solid var(--line); margin: 0 4px; flex: none; }
 
 button { border: none; background: none; padding: 0; color: inherit; cursor: pointer; font: inherit; }
 
